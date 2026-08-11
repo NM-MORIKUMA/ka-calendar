@@ -672,6 +672,7 @@
     cloud.tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope: GOOGLE_SCOPE,
+      use_fedcm_for_prompt: true,
       callback: function (resp) {
         if (resp.error) {
           // A silent (page-load) reconnect attempt is expected to "fail" for a
