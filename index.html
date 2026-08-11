@@ -5,86 +5,106 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>出勤カレンダー</title>
 <style>
+  /* Macaron/pastel palette. Pastels are light by definition, so fills and text need
+     separate tokens: --accent/--stamp are the soft fill colors, and the -strong
+     variants are the readable versions used for text and thin lines. "Strong" means
+     darker in light mode and lighter in dark mode -- never a naive inversion. */
   :root {
-    --paper: #EEF1EC;
-    --paper-raised: #F8FAF7;
-    --paper-sunken: #E3E7E0;
-    --ink: #20261F;
-    --ink-soft: #4B5650;
-    --ink-faint: #7C867E;
-    --accent: #0E6B42;
-    --accent-ink: #F8FAF7;
-    --status-work: #3E5C76;
-    --status-off: #C9B48C;
-    --status-leave: #1E6B80;
-    --status-pending: #C97A2B;
-    --stamp: #8F2E22;
-    --line: #D3D8CE;
-    --danger: #A6362C;
-    --shadow: 0 8px 24px rgba(32, 38, 31, 0.16);
+    --paper: #FAF6F4;
+    --paper-raised: #FFFCFB;
+    --paper-sunken: #F1EAE7;
+    --ink: #3D3639;
+    --ink-soft: #6E6367;
+    --ink-faint: #786D73;
+    --accent: #9FD8C0;
+    --accent-strong: #31735F;
+    --accent-ink: #2C4A40;
+    --status-work: #A9C9E8;
+    --status-off: #BFE0C4;
+    --status-leave: #F0DFA0;
+    --status-pending: #F6C4A8;
+    --stamp: #E4849B;
+    --stamp-strong: #C25A75;
+    --line: #E8DFDC;
+    --danger: #C25A72;
+    --fill-mix: 72%;
+    --border-mix: 85%;
+    --shadow: 0 8px 24px rgba(122, 111, 115, 0.18);
     --radius: 6px;
     color-scheme: light;
   }
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --paper: #14181A;
-      --paper-raised: #1D2224;
-      --paper-sunken: #101314;
-      --ink: #E8ECE7;
-      --ink-soft: #9BA69C;
-      --ink-faint: #6C766E;
-      --accent: #2FA06B;
-      --accent-ink: #0D1210;
-      --status-work: #7C9CC4;
-      --status-off: #D9B078;
-      --status-leave: #4FAFC7;
-      --status-pending: #E3A857;
-      --stamp: #E2564A;
-      --line: #2A3130;
-      --danger: #E2564A;
-      --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --paper: #211E24;
+      --paper-raised: #2B2730;
+      --paper-sunken: #191619;
+      --ink: #EDE6EA;
+      --ink-soft: #B0A5AC;
+      --ink-faint: #948A91;
+      --accent: #8ED3B8;
+      --accent-strong: #A8E3C8;
+      --accent-ink: #1E2A25;
+      --status-work: #8FB4DB;
+      --status-off: #A5CFB0;
+      --status-leave: #DCC98A;
+      --status-pending: #E8AE8A;
+      --stamp: #E8899E;
+      --stamp-strong: #F0A4B6;
+      --line: #3A343F;
+      --danger: #EE8FA4;
+      --fill-mix: 34%;
+      --border-mix: 55%;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
       color-scheme: dark;
     }
   }
 
   :root[data-theme="dark"] {
-    --paper: #14181A;
-    --paper-raised: #1D2224;
-    --paper-sunken: #101314;
-    --ink: #E8ECE7;
-    --ink-soft: #9BA69C;
-    --ink-faint: #6C766E;
-    --accent: #2FA06B;
-    --accent-ink: #0D1210;
-    --status-work: #7C9CC4;
-    --status-off: #D9B078;
-    --status-leave: #4FAFC7;
-    --status-pending: #E3A857;
-    --stamp: #E2564A;
-    --line: #2A3130;
-    --danger: #E2564A;
-    --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --paper: #211E24;
+    --paper-raised: #2B2730;
+    --paper-sunken: #191619;
+    --ink: #EDE6EA;
+    --ink-soft: #B0A5AC;
+    --ink-faint: #948A91;
+    --accent: #8ED3B8;
+    --accent-strong: #A8E3C8;
+    --accent-ink: #1E2A25;
+    --status-work: #8FB4DB;
+    --status-off: #A5CFB0;
+    --status-leave: #DCC98A;
+    --status-pending: #E8AE8A;
+    --stamp: #E8899E;
+    --stamp-strong: #F0A4B6;
+    --line: #3A343F;
+    --danger: #EE8FA4;
+    --fill-mix: 34%;
+    --border-mix: 55%;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
     color-scheme: dark;
   }
 
   :root[data-theme="light"] {
-    --paper: #EEF1EC;
-    --paper-raised: #F8FAF7;
-    --paper-sunken: #E3E7E0;
-    --ink: #20261F;
-    --ink-soft: #4B5650;
-    --ink-faint: #7C867E;
-    --accent: #0E6B42;
-    --accent-ink: #F8FAF7;
-    --status-work: #3E5C76;
-    --status-off: #C9B48C;
-    --status-leave: #1E6B80;
-    --status-pending: #C97A2B;
-    --stamp: #8F2E22;
-    --line: #D3D8CE;
-    --danger: #A6362C;
-    --shadow: 0 8px 24px rgba(32, 38, 31, 0.16);
+    --paper: #FAF6F4;
+    --paper-raised: #FFFCFB;
+    --paper-sunken: #F1EAE7;
+    --ink: #3D3639;
+    --ink-soft: #6E6367;
+    --ink-faint: #786D73;
+    --accent: #9FD8C0;
+    --accent-strong: #31735F;
+    --accent-ink: #2C4A40;
+    --status-work: #A9C9E8;
+    --status-off: #BFE0C4;
+    --status-leave: #F0DFA0;
+    --status-pending: #F6C4A8;
+    --stamp: #E4849B;
+    --stamp-strong: #C25A75;
+    --line: #E8DFDC;
+    --danger: #C25A72;
+    --fill-mix: 72%;
+    --border-mix: 85%;
+    --shadow: 0 8px 24px rgba(122, 111, 115, 0.18);
     color-scheme: light;
   }
 
@@ -163,7 +183,7 @@
   }
   .icon-btn:active { background: var(--paper-sunken); }
   .sync-badge { font-size: 15px; }
-  .sync-badge.sync-synced { color: var(--accent); }
+  .sync-badge.sync-synced { color: var(--accent-strong); }
   .sync-badge.sync-error { color: var(--danger); }
   .sync-badge.sync-connecting { color: var(--ink-faint); }
 
@@ -194,12 +214,12 @@
   .stat-value {
     font-size: 22px;
     font-weight: 700;
-    color: var(--accent);
-    text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent);
+    color: var(--accent-strong);
+    text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 30%, transparent);
   }
   .stat-value .unit { font-size: 12px; font-weight: 400; color: var(--ink-soft); margin-left: 2px; text-shadow: none; }
   .stat-sub { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
-  .stat-sub .diff-plus { color: var(--status-leave); font-weight: 700; }
+  .stat-sub .diff-plus { color: var(--accent-strong); font-weight: 700; }
   .stat-sub .diff-minus { color: var(--danger); font-weight: 700; }
 
   /* ---------- Grid ---------- */
@@ -239,18 +259,18 @@
     height: 18px;
     padding: 0 2px;
     border-radius: 50%;
-    border: 1.5px solid var(--stamp);
-    color: var(--stamp);
+    border: 1.5px solid var(--stamp-strong);
+    color: var(--stamp-strong);
   }
   .day-cell.dim { opacity: 0.4; }
   .day-cell.unset {
     background: repeating-linear-gradient(135deg, var(--paper-raised), var(--paper-raised) 4px, var(--paper-sunken) 4px, var(--paper-sunken) 5px);
   }
-  .day-cell.today { box-shadow: 0 0 0 2px var(--accent) inset; }
-  .day-cell[data-status="work"] { background: color-mix(in srgb, var(--status-work) 30%, var(--paper-raised)); border-color: color-mix(in srgb, var(--status-work) 55%, var(--line)); }
-  .day-cell[data-status="off"] { background: color-mix(in srgb, var(--status-off) 35%, var(--paper-raised)); border-color: color-mix(in srgb, var(--status-off) 55%, var(--line)); }
-  .day-cell[data-status="leave"] { background: color-mix(in srgb, var(--status-leave) 30%, var(--paper-raised)); border-color: color-mix(in srgb, var(--status-leave) 55%, var(--line)); }
-  .day-cell[data-status="pending"] { background: color-mix(in srgb, var(--status-pending) 18%, var(--paper-raised)); border: 1px dashed var(--status-pending); }
+  .day-cell.today { box-shadow: 0 0 0 2px var(--accent-strong) inset; }
+  .day-cell[data-status="work"] { background: color-mix(in srgb, var(--status-work) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-work) var(--border-mix), var(--line)); }
+  .day-cell[data-status="off"] { background: color-mix(in srgb, var(--status-off) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-off) var(--border-mix), var(--line)); }
+  .day-cell[data-status="leave"] { background: color-mix(in srgb, var(--status-leave) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-leave) var(--border-mix), var(--line)); }
+  .day-cell[data-status="pending"] { background: color-mix(in srgb, var(--status-pending) var(--fill-mix), var(--paper-raised)); border: 1px dashed color-mix(in srgb, var(--status-pending) var(--border-mix), var(--ink-faint)); }
   .stamp-badge {
     position: absolute;
     top: -5px;
@@ -267,19 +287,11 @@
     justify-content: center;
     transform: rotate(-10deg);
     border: 1.5px solid var(--paper);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.14);
   }
-  .stamp-badge.mismatch { border: 2px solid var(--status-pending); }
-
-  .onboard-banner {
-    margin: 0 12px 10px;
-    padding: 8px 10px;
-    background: color-mix(in srgb, var(--status-pending) 16%, var(--paper-raised));
-    border: 1px solid var(--status-pending);
-    border-radius: var(--radius);
-    font-size: 12px;
-    color: var(--ink);
-  }
+  /* Anomalous combination (mark set on a non-work day): ring it in ink rather than a
+     pastel, so it stays obviously different from a normal badge in both themes. */
+  .stamp-badge.mismatch { border: 2px solid var(--ink); }
 
   /* ---------- Mode toolbar (pen-and-paint input) ---------- */
   .mode-toolbar {
@@ -402,7 +414,7 @@
   /* ---------- Onboarding ---------- */
   .onboard-overlay {
     position: fixed; inset: 0; z-index: 60;
-    background: rgba(20,24,22,0.55);
+    background: rgba(61, 54, 57, 0.45);
     display: flex; align-items: center; justify-content: center;
     padding: 20px;
   }
