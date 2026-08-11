@@ -665,22 +665,15 @@
 
   function cloudReady() { return !!(window.google && window.google.accounts && window.google.accounts.oauth2); }
 
-  var cloudAttemptWasExplicit = false;
-
   function ensureTokenClient() {
     if (cloud.tokenClient) return cloud.tokenClient;
     cloud.tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope: GOOGLE_SCOPE,
-      use_fedcm_for_prompt: true,
       callback: function (resp) {
-        if (resp.error) {
-          // A silent (page-load) reconnect attempt is expected to "fail" for a
-          // never-logged-in visitor -- only surface that as an error state if the
-          // user explicitly tapped the login button.
-          if (cloudAttemptWasExplicit) { cloud.status = "error"; render(); }
-          return;
-        }
+        // Only the explicit (button-tap) login path reaches this callback; the
+        // page-load path goes through attemptSilentReconnect instead.
+        if (resp.error) { cloud.status = "error"; render(); return; }
         cloud.token = resp.access_token;
         cloud.tokenExpiresAt = Date.now() + (Number(resp.expires_in) || 3300) * 1000;
         cloud.status = "connecting";
@@ -693,18 +686,58 @@
 
   function cloudLogin() {
     if (!cloudReady()) { window.alert("Googleログインの準備ができていません。少し待ってからもう一度お試しください。"); return; }
-    cloudAttemptWasExplicit = true;
     ensureTokenClient().requestAccessToken({ prompt: "consent" });
   }
 
-  function attemptSilentReconnect(retriesLeft) {
-    if (cloudReady()) {
-      cloudAttemptWasExplicit = false;
-      ensureTokenClient().requestAccessToken({ prompt: "" });
-      return;
+  // Silent re-auth via a hidden iframe. GIS's own requestAccessToken always opens a
+  // popup, which the browser blocks when it isn't triggered by a user gesture -- so on
+  // page load we drive the OAuth endpoint ourselves with prompt=none inside an iframe.
+  // Google either redirects straight back with a token (already-granted consent) or
+  // errors out, and either way nothing visible happens.
+  function attemptSilentReconnect() {
+    var redirectUri = location.origin + location.pathname;
+    var params = [
+      "client_id=" + encodeURIComponent(GOOGLE_CLIENT_ID),
+      "redirect_uri=" + encodeURIComponent(redirectUri),
+      "response_type=token",
+      "scope=" + encodeURIComponent(GOOGLE_SCOPE),
+      "prompt=none"
+    ].join("&");
+
+    var frame = document.createElement("iframe");
+    frame.style.display = "none";
+    frame.src = "https://accounts.google.com/o/oauth2/v2/auth?" + params;
+
+    var settled = false;
+    function cleanup() {
+      if (frame.parentNode) frame.parentNode.removeChild(frame);
     }
-    if (retriesLeft <= 0) return;
-    setTimeout(function () { attemptSilentReconnect(retriesLeft - 1); }, 400);
+    function finish(token, expiresIn) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (!token) return;
+      cloud.token = token;
+      cloud.tokenExpiresAt = Date.now() + (Number(expiresIn) || 3300) * 1000;
+      cloud.status = "connecting";
+      render();
+      pullFromCloud();
+    }
+
+    frame.addEventListener("load", function () {
+      var hash;
+      try {
+        // Same-origin only once Google has redirected back to us; while still on
+        // accounts.google.com this throws, which just means "not done yet".
+        hash = frame.contentWindow.location.hash;
+      } catch (e) { return; }
+      if (!hash) { finish(null); return; }
+      var parsed = new URLSearchParams(hash.replace(/^#/, ""));
+      finish(parsed.get("access_token"), parsed.get("expires_in"));
+    });
+
+    document.body.appendChild(frame);
+    setTimeout(function () { finish(null); }, 8000);
   }
 
   function cloudLogout() {
@@ -1164,7 +1197,7 @@
   /* ---------- boot ---------- */
   state = load();
   render();
-  attemptSilentReconnect(15);
+  attemptSilentReconnect();
 })();
 </script>
 </body>
