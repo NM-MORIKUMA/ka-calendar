@@ -665,13 +665,21 @@
 
   function cloudReady() { return !!(window.google && window.google.accounts && window.google.accounts.oauth2); }
 
+  var cloudAttemptWasExplicit = false;
+
   function ensureTokenClient() {
     if (cloud.tokenClient) return cloud.tokenClient;
     cloud.tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope: GOOGLE_SCOPE,
       callback: function (resp) {
-        if (resp.error) { cloud.status = "error"; render(); return; }
+        if (resp.error) {
+          // A silent (page-load) reconnect attempt is expected to "fail" for a
+          // never-logged-in visitor -- only surface that as an error state if the
+          // user explicitly tapped the login button.
+          if (cloudAttemptWasExplicit) { cloud.status = "error"; render(); }
+          return;
+        }
         cloud.token = resp.access_token;
         cloud.tokenExpiresAt = Date.now() + (Number(resp.expires_in) || 3300) * 1000;
         cloud.status = "connecting";
@@ -684,7 +692,18 @@
 
   function cloudLogin() {
     if (!cloudReady()) { window.alert("Googleログインの準備ができていません。少し待ってからもう一度お試しください。"); return; }
+    cloudAttemptWasExplicit = true;
     ensureTokenClient().requestAccessToken({ prompt: "consent" });
+  }
+
+  function attemptSilentReconnect(retriesLeft) {
+    if (cloudReady()) {
+      cloudAttemptWasExplicit = false;
+      ensureTokenClient().requestAccessToken({ prompt: "" });
+      return;
+    }
+    if (retriesLeft <= 0) return;
+    setTimeout(function () { attemptSilentReconnect(retriesLeft - 1); }, 400);
   }
 
   function cloudLogout() {
@@ -1144,6 +1163,7 @@
   /* ---------- boot ---------- */
   state = load();
   render();
+  attemptSilentReconnect(15);
 })();
 </script>
 </body>
