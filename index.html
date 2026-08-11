@@ -1,0 +1,1150 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>出勤カレンダー</title>
+<style>
+  :root {
+    --paper: #EEF1EC;
+    --paper-raised: #F8FAF7;
+    --paper-sunken: #E3E7E0;
+    --ink: #20261F;
+    --ink-soft: #4B5650;
+    --ink-faint: #7C867E;
+    --accent: #0E6B42;
+    --accent-ink: #F8FAF7;
+    --status-work: #3E5C76;
+    --status-off: #C9B48C;
+    --status-leave: #1E6B80;
+    --status-pending: #C97A2B;
+    --stamp: #8F2E22;
+    --line: #D3D8CE;
+    --danger: #A6362C;
+    --shadow: 0 8px 24px rgba(32, 38, 31, 0.16);
+    --radius: 6px;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14181A;
+      --paper-raised: #1D2224;
+      --paper-sunken: #101314;
+      --ink: #E8ECE7;
+      --ink-soft: #9BA69C;
+      --ink-faint: #6C766E;
+      --accent: #2FA06B;
+      --accent-ink: #0D1210;
+      --status-work: #7C9CC4;
+      --status-off: #D9B078;
+      --status-leave: #4FAFC7;
+      --status-pending: #E3A857;
+      --stamp: #E2564A;
+      --line: #2A3130;
+      --danger: #E2564A;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #14181A;
+    --paper-raised: #1D2224;
+    --paper-sunken: #101314;
+    --ink: #E8ECE7;
+    --ink-soft: #9BA69C;
+    --ink-faint: #6C766E;
+    --accent: #2FA06B;
+    --accent-ink: #0D1210;
+    --status-work: #7C9CC4;
+    --status-off: #D9B078;
+    --status-leave: #4FAFC7;
+    --status-pending: #E3A857;
+    --stamp: #E2564A;
+    --line: #2A3130;
+    --danger: #E2564A;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+
+  :root[data-theme="light"] {
+    --paper: #EEF1EC;
+    --paper-raised: #F8FAF7;
+    --paper-sunken: #E3E7E0;
+    --ink: #20261F;
+    --ink-soft: #4B5650;
+    --ink-faint: #7C867E;
+    --accent: #0E6B42;
+    --accent-ink: #F8FAF7;
+    --status-work: #3E5C76;
+    --status-off: #C9B48C;
+    --status-leave: #1E6B80;
+    --status-pending: #C97A2B;
+    --stamp: #8F2E22;
+    --line: #D3D8CE;
+    --danger: #A6362C;
+    --shadow: 0 8px 24px rgba(32, 38, 31, 0.16);
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .digits {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .app-shell {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    background: var(--paper);
+    display: flex;
+    flex-direction: column;
+  }
+
+  button { font-family: inherit; }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-btn {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius);
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .nav-btn:active { background: var(--paper-sunken); }
+  .period-label {
+    flex: 1;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .period-label .period-name { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; }
+  .period-label .period-range { font-size: 12px; color: var(--ink-soft); }
+  .icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+  }
+  .icon-btn:active { background: var(--paper-sunken); }
+  .sync-badge { font-size: 15px; }
+  .sync-badge.sync-synced { color: var(--accent); }
+  .sync-badge.sync-error { color: var(--danger); }
+  .sync-badge.sync-connecting { color: var(--ink-faint); }
+
+  /* ---------- Dashboard ---------- */
+  .dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .stat-card {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+  .stat-panel {
+    margin-top: 4px;
+    background: var(--paper-sunken);
+    border-radius: 4px;
+    padding: 4px 6px;
+  }
+  .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+    text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  .stat-value .unit { font-size: 12px; font-weight: 400; color: var(--ink-soft); margin-left: 2px; text-shadow: none; }
+  .stat-sub { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+  .stat-sub .diff-plus { color: var(--status-leave); font-weight: 700; }
+  .stat-sub .diff-minus { color: var(--danger); font-weight: 700; }
+
+  /* ---------- Grid ---------- */
+  .grid-wrap { overflow-x: auto; padding: 0 12px calc(72px + env(safe-area-inset-bottom)); }
+  .weekday-row, .day-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(38px, 1fr));
+    gap: 4px;
+    min-width: 280px;
+  }
+  .weekday-row { margin-bottom: 4px; }
+  .weekday-cell {
+    text-align: center;
+    font-size: 11px;
+    color: var(--ink-faint);
+    padding: 2px 0;
+  }
+  .day-cell {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    background: var(--paper-raised);
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 4px;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  .day-cell .day-num { font-size: 12px; font-weight: 600; }
+  .day-cell .day-num.holiday {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 2px;
+    border-radius: 50%;
+    border: 1.5px solid var(--stamp);
+    color: var(--stamp);
+  }
+  .day-cell.dim { opacity: 0.4; }
+  .day-cell.unset {
+    background: repeating-linear-gradient(135deg, var(--paper-raised), var(--paper-raised) 4px, var(--paper-sunken) 4px, var(--paper-sunken) 5px);
+  }
+  .day-cell.today { box-shadow: 0 0 0 2px var(--accent) inset; }
+  .day-cell[data-status="work"] { background: color-mix(in srgb, var(--status-work) 30%, var(--paper-raised)); border-color: color-mix(in srgb, var(--status-work) 55%, var(--line)); }
+  .day-cell[data-status="off"] { background: color-mix(in srgb, var(--status-off) 35%, var(--paper-raised)); border-color: color-mix(in srgb, var(--status-off) 55%, var(--line)); }
+  .day-cell[data-status="leave"] { background: color-mix(in srgb, var(--status-leave) 30%, var(--paper-raised)); border-color: color-mix(in srgb, var(--status-leave) 55%, var(--line)); }
+  .day-cell[data-status="pending"] { background: color-mix(in srgb, var(--status-pending) 18%, var(--paper-raised)); border: 1px dashed var(--status-pending); }
+  .stamp-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--stamp);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: rotate(-10deg);
+    border: 1.5px solid var(--paper);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .stamp-badge.mismatch { border: 2px solid var(--status-pending); }
+
+  .onboard-banner {
+    margin: 0 12px 10px;
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--status-pending) 16%, var(--paper-raised));
+    border: 1px solid var(--status-pending);
+    border-radius: var(--radius);
+    font-size: 12px;
+    color: var(--ink);
+  }
+
+  /* ---------- Mode toolbar (pen-and-paint input) ---------- */
+  .mode-toolbar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    max-width: 480px;
+    margin: 0 auto;
+    z-index: 20;
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    background: var(--paper);
+    border-top: 1px solid var(--line);
+  }
+  .mode-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: 44px;
+    padding: 6px 2px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    background: var(--paper-raised);
+    color: var(--ink);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .mode-btn[aria-pressed="true"] {
+    box-shadow: 0 0 0 2px var(--mode-color) inset;
+    background: var(--paper-sunken);
+    font-weight: 700;
+  }
+  .mode-swatch { width: 14px; height: 14px; border-radius: 3px; background: var(--mode-color); }
+
+  /* ---------- Undo toast ---------- */
+  .toast {
+    position: fixed;
+    left: 0; right: 0;
+    bottom: calc(58px + env(safe-area-inset-bottom));
+    max-width: 480px;
+    margin: 0 auto;
+    z-index: 21;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 9px 14px;
+    margin-left: 12px;
+    margin-right: 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    box-shadow: var(--shadow);
+  }
+  .toast-undo {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .toast { animation: toast-in 0.15s ease-out; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  }
+
+  /* ---------- Settings panel ---------- */
+  .settings-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: var(--paper);
+    max-width: 480px;
+    margin: 0 auto;
+    overflow-y: auto;
+  }
+  .settings-header {
+    position: sticky; top: 0;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; background: var(--paper); border-bottom: 1px solid var(--line);
+  }
+  .settings-header h1 { font-size: 15px; margin: 0; flex: 1; }
+  .settings-section { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .settings-section h2 { font-size: 13px; letter-spacing: 0.04em; color: var(--ink-soft); margin: 0 0 10px; }
+  .field-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .field-row label { font-size: 13px; }
+  .field-row input[type="number"] {
+    width: 84px; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--line);
+    background: var(--paper-raised); color: var(--ink); font-size: 14px; text-align: right;
+  }
+  .num-input { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .lot-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  .lot-table th, .lot-table td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  .lot-table th:first-child, .lot-table td:first-child { text-align: left; }
+  .help-text { font-size: 11px; color: var(--ink-soft); margin-top: 4px; line-height: 1.5; }
+  .fy-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .fy-row select { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); font-size: 13px; }
+  .fy-copy-btn { padding: 8px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .quota-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  .quota-row .month-label { font-size: 13px; }
+  .quota-row .month-range { font-size: 10px; color: var(--ink-faint); }
+  .quota-warn { font-size: 10px; color: var(--danger); }
+  .btn-row { display: flex; gap: 8px; }
+  .btn {
+    flex: 1; padding: 10px; border-radius: var(--radius); border: 1px solid var(--line);
+    background: var(--paper-raised); color: var(--ink); font-size: 13px; cursor: pointer; text-align: center;
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+  .backup-status { font-size: 11px; color: var(--ink-soft); margin-bottom: 8px; }
+  .backup-status.stale { color: var(--danger); }
+  select.week-select { padding: 8px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); font-size: 13px; }
+  #import-file { display: none; }
+
+  /* ---------- Onboarding ---------- */
+  .onboard-overlay {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(20,24,22,0.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .onboard-card {
+    background: var(--paper); border-radius: 10px; border: 1px solid var(--line);
+    box-shadow: var(--shadow); padding: 22px; max-width: 340px; width: 100%;
+  }
+  .onboard-card h1 { font-size: 17px; margin: 0 0 6px; }
+  .onboard-card p { font-size: 13px; color: var(--ink-soft); line-height: 1.6; margin: 0 0 14px; }
+  .onboard-card input[type="number"] {
+    width: 100%; padding: 10px; font-size: 20px; border-radius: 4px; border: 1px solid var(--line);
+    background: var(--paper-raised); color: var(--ink); text-align: center; margin-bottom: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+(function () {
+  "use strict";
+  var STORAGE_KEY = "kaCalendar:v1";
+  var GOOGLE_CLIENT_ID = "715481185764-jhv00uu5vpsmfdhh090hj4fmd4t3aaq1.apps.googleusercontent.com";
+  var GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+  var SHEET_NAME = "Ka Calendar Data";
+  var SHEET_ID_KEY = "kaCalendar:sheetId";
+  var STATUS_LABEL = { work: "出勤", off: "公休", leave: "有給消化", pending: "休み希望" };
+  var MONTH_ORDER = ["4","5","6","7","8","9","10","11","12","1","2","3"];
+
+  /* ---------- pure date helpers (no Date-object arithmetic) ---------- */
+  function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+  function daysInMonth(y, m) {
+    return [31, isLeap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+  }
+  function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+  function dkey(y, m, d) { return y + "-" + pad2(m) + "-" + pad2(d); }
+  function addDays(y, m, d, n) {
+    d += n;
+    while (d < 1) { m -= 1; if (m < 1) { m = 12; y -= 1; } d += daysInMonth(y, m); }
+    while (d > daysInMonth(y, m)) { d -= daysInMonth(y, m); m += 1; if (m > 12) { m = 1; y += 1; } }
+    return { y: y, m: m, d: d };
+  }
+  function cmpYmd(a, b) { return (a.y - b.y) || (a.m - b.m) || (a.d - b.d); }
+  function dayOfWeek(y, m, d) {
+    var t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    var yy = y;
+    if (m < 3) yy -= 1;
+    return (yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) + t[m - 1] + d) % 7;
+  }
+
+  /* ---------- Japanese national holidays (祝日、令和の祝日体系: 2020年以降のルール) ---------- */
+  var holidayCache = {};
+  function nthMonday(y, m, n) {
+    var dow1 = dayOfWeek(y, m, 1);
+    var offset = (1 - dow1 + 7) % 7;
+    return 1 + offset + (n - 1) * 7;
+  }
+  function shunbunDay(y) { return Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)); }
+  function shuubunDay(y) { return Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)); }
+  function holidaySetForYear(y) {
+    if (holidayCache[y]) return holidayCache[y];
+    var set = {};
+    function add(m, d) { set[dkey(y, m, d)] = true; }
+    add(1, 1);
+    add(1, nthMonday(y, 1, 2));
+    add(2, 11);
+    add(2, 23);
+    add(3, shunbunDay(y));
+    add(4, 29);
+    add(5, 3); add(5, 4); add(5, 5);
+    add(7, nthMonday(y, 7, 3));
+    add(8, 11);
+    add(9, nthMonday(y, 9, 3));
+    add(9, shuubunDay(y));
+    add(10, nthMonday(y, 10, 2));
+    add(11, 3); add(11, 23);
+    // 国民の休日: 前後を祝日に挟まれた平日
+    var additions = [];
+    Object.keys(set).forEach(function (k) {
+      var p = k.split("-").map(Number);
+      var mid = addDays(p[0], p[1], p[2], 1);
+      var after = addDays(p[0], p[1], p[2], 2);
+      var midKey = dkey(mid.y, mid.m, mid.d);
+      var afterKey = dkey(after.y, after.m, after.d);
+      if (!set[midKey] && set[afterKey] && dayOfWeek(mid.y, mid.m, mid.d) !== 0) additions.push(midKey);
+    });
+    additions.forEach(function (k) { set[k] = true; });
+    // 振替休日: 日曜の祝日の翌日以降で、最初に祝日でない日
+    var sundays = Object.keys(set).filter(function (k) {
+      var p = k.split("-").map(Number);
+      return dayOfWeek(p[0], p[1], p[2]) === 0;
+    }).sort();
+    sundays.forEach(function (k) {
+      var p = k.split("-").map(Number);
+      var cursor = addDays(p[0], p[1], p[2], 1);
+      while (set[dkey(cursor.y, cursor.m, cursor.d)]) cursor = addDays(cursor.y, cursor.m, cursor.d, 1);
+      set[dkey(cursor.y, cursor.m, cursor.d)] = true;
+    });
+    holidayCache[y] = set;
+    return set;
+  }
+  function isHoliday(y, m, d) { return !!holidaySetForYear(y)[dkey(y, m, d)]; }
+  function isRedDate(y, m, d) { return dayOfWeek(y, m, d) === 0 || isHoliday(y, m, d); }
+
+  var now = new Date();
+  var TODAY = { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() };
+  var TODAY_KEY = dkey(TODAY.y, TODAY.m, TODAY.d);
+
+  /* ---------- period (16th - 15th) helpers ---------- */
+  function periodOf(y, m, d) {
+    var sy = y, sm = m;
+    if (d < 16) { sm -= 1; if (sm < 1) { sm = 12; sy -= 1; } }
+    return { startY: sy, startM: sm };
+  }
+  function periodEnd(p) {
+    var em = p.startM === 12 ? 1 : p.startM + 1;
+    var ey = p.startM === 12 ? p.startY + 1 : p.startY;
+    return { y: ey, m: em, d: 15 };
+  }
+  function periodDates(p) {
+    var out = [];
+    var cur = { y: p.startY, m: p.startM, d: 16 };
+    var end = periodEnd(p);
+    while (cmpYmd(cur, end) <= 0) { out.push(cur); cur = addDays(cur.y, cur.m, cur.d, 1); }
+    return out;
+  }
+  function nextPeriod(p) {
+    var sm = p.startM + 1, sy = p.startY;
+    if (sm > 12) { sm = 1; sy += 1; }
+    return { startY: sy, startM: sm };
+  }
+  function prevPeriod(p) {
+    var sm = p.startM - 1, sy = p.startY;
+    if (sm < 1) { sm = 12; sy -= 1; }
+    return { startY: sy, startM: sm };
+  }
+  function fiscalYearOf(p) { return p.startM >= 4 ? p.startY : p.startY - 1; }
+  function periodLabel(p) { return p.startM + "月期"; }
+  function periodRangeLabel(p) {
+    var end = periodEnd(p);
+    return p.startM + "/16–" + end.m + "/" + end.d;
+  }
+
+  /* ---------- state ---------- */
+  var state = null;
+  var ui = { activeMode: null, lastEdit: null, settingsOpen: false, settingsFY: null, viewPeriod: periodOf(TODAY.y, TODAY.m, TODAY.d) };
+  var toastTimer = null;
+  var MODE_BUTTONS = [
+    { key: "work", label: "出勤", color: "--status-work" },
+    { key: "off", label: "公休", color: "--status-off" },
+    { key: "leave", label: "有給", color: "--status-leave" },
+    { key: "pending", label: "希望", color: "--status-pending" },
+    { key: "mark", label: "拠点", color: "--stamp", isStamp: true }
+  ];
+
+  function freshState(initialBalance) {
+    return {
+      version: 1,
+      days: {},
+      leaveGrants: [],
+      leaveManualAdjustment: initialBalance,
+      firstRunDate: TODAY_KEY,
+      quotas: {},
+      settings: { weekStart: "mon" },
+      lastBackupAt: null
+    };
+  }
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || parsed.version !== 1) return null;
+      return parsed;
+    } catch (e) { return null; }
+  }
+  function persist() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  /* ---------- leave grant reconciliation ---------- */
+  function reconcileGrants() {
+    if (!state.firstRunDate) return;
+    var startY = parseInt(state.firstRunDate.slice(0, 4), 10);
+    var endY = TODAY.y + 1;
+    for (var yy = startY; yy <= endY; yy++) {
+      var gk = dkey(yy, 2, 15);
+      if (gk > state.firstRunDate && gk <= TODAY_KEY) {
+        var exists = state.leaveGrants.some(function (g) { return g.grantedOn === gk; });
+        if (!exists) {
+          state.leaveGrants.push({ grantedOn: gk, amount: 20, expiresOn: dkey(yy + 2, 2, 14) });
+        }
+      }
+    }
+    state.leaveGrants.sort(function (a, b) { return a.grantedOn < b.grantedOn ? -1 : a.grantedOn > b.grantedOn ? 1 : 0; });
+  }
+
+  // The manual-adjustment number doubles as a non-expiring "baseline pool" (its real lot
+  // composition is unknown, so it never expires) and is always consumed first, since it
+  // represents the oldest leave available relative to any auto-granted lot tracked later.
+  function computeLeaveLots() {
+    var baseline = { grantedOn: null, expiresOn: null, amount: Math.max(0, state.leaveManualAdjustment || 0), isBaseline: true };
+    var grants = [baseline].concat(state.leaveGrants.slice());
+    var consumed = grants.map(function () { return 0; });
+    var leaveDays = Object.keys(state.days).filter(function (k) { return state.days[k].status === "leave"; }).sort();
+    leaveDays.forEach(function (dk) {
+      for (var i = 0; i < grants.length; i++) {
+        if (consumed[i] < grants[i].amount) { consumed[i]++; break; }
+      }
+    });
+    return grants.map(function (g, i) {
+      return {
+        grantedOn: g.grantedOn,
+        expiresOn: g.expiresOn,
+        amount: g.amount,
+        consumed: consumed[i],
+        remaining: g.amount - consumed[i],
+        expired: !!g.expiresOn && g.expiresOn < TODAY_KEY,
+        isBaseline: !!g.isBaseline
+      };
+    });
+  }
+
+  function computeLeaveBalance() {
+    var lots = computeLeaveLots();
+    var total = 0;
+    lots.forEach(function (l) { if (!l.expired) total += l.remaining; });
+    var extra = (state.leaveManualAdjustment || 0) < 0 ? state.leaveManualAdjustment : 0;
+    return total + extra;
+  }
+
+  /* ---------- quota helpers ---------- */
+  function getQuota(p) {
+    var fy = fiscalYearOf(p);
+    var y = state.quotas[fy];
+    if (!y) return null;
+    var v = y[String(p.startM)];
+    return (v === undefined || v === null || v === "") ? null : Number(v);
+  }
+  function setQuota(fy, monthKey, value) {
+    if (!state.quotas[fy]) state.quotas[fy] = {};
+    state.quotas[fy][monthKey] = (value === "" || value === null) ? null : Number(value);
+  }
+  function countWorked(p) {
+    var dates = periodDates(p);
+    var count = 0;
+    dates.forEach(function (dt) {
+      var e = state.days[dkey(dt.y, dt.m, dt.d)];
+      if (e && e.status === "work") count++;
+    });
+    return count;
+  }
+
+  /* ---------- rendering ---------- */
+  /* ---------- cloud sync (Google Sheets via client-side OAuth, no server) ---------- */
+  var cloud = { token: null, tokenExpiresAt: 0, sheetId: null, tokenClient: null, status: "signedout" };
+  // status: "signedout" | "connecting" | "synced" | "error"
+
+  function cloudReady() { return !!(window.google && window.google.accounts && window.google.accounts.oauth2); }
+
+  function ensureTokenClient() {
+    if (cloud.tokenClient) return cloud.tokenClient;
+    cloud.tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: GOOGLE_SCOPE,
+      callback: function (resp) {
+        if (resp.error) { cloud.status = "error"; render(); return; }
+        cloud.token = resp.access_token;
+        cloud.tokenExpiresAt = Date.now() + (Number(resp.expires_in) || 3300) * 1000;
+        cloud.status = "connecting";
+        render();
+        pullFromCloud();
+      }
+    });
+    return cloud.tokenClient;
+  }
+
+  function cloudLogin() {
+    if (!cloudReady()) { window.alert("Googleログインの準備ができていません。少し待ってからもう一度お試しください。"); return; }
+    ensureTokenClient().requestAccessToken({ prompt: "consent" });
+  }
+
+  function cloudLogout() {
+    if (cloud.token && cloudReady()) { google.accounts.oauth2.revoke(cloud.token, function () {}); }
+    cloud.token = null; cloud.tokenExpiresAt = 0; cloud.status = "signedout";
+    render();
+  }
+
+  function tokenValid() { return !!cloud.token && Date.now() < cloud.tokenExpiresAt - 30000; }
+  function authHeaders() { return { "Authorization": "Bearer " + cloud.token, "Content-Type": "application/json" }; }
+
+  function findOrCreateSheet() {
+    var cached = localStorage.getItem(SHEET_ID_KEY);
+    var checkCached = cached
+      ? fetch("https://www.googleapis.com/drive/v3/files/" + cached + "?fields=id,trashed", { headers: authHeaders() })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (meta) { return (meta && !meta.trashed) ? meta.id : null; })
+          .catch(function () { return null; })
+      : Promise.resolve(null);
+    return checkCached.then(function (id) {
+      if (id) return id;
+      var q = encodeURIComponent("name = '" + SHEET_NAME + "' and trashed = false and mimeType = 'application/vnd.google-apps.spreadsheet'");
+      return fetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&spaces=drive&fields=files(id)", { headers: authHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.files && data.files.length) return data.files[0].id;
+          return fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+            method: "POST", headers: authHeaders(),
+            body: JSON.stringify({ properties: { title: SHEET_NAME } })
+          }).then(function (r) { return r.json(); }).then(function (sheet) { return sheet.spreadsheetId; });
+        });
+    }).then(function (id) {
+      cloud.sheetId = id;
+      localStorage.setItem(SHEET_ID_KEY, id);
+      return id;
+    });
+  }
+
+  function pullFromCloud() {
+    findOrCreateSheet().then(function (id) {
+      return fetch("https://sheets.googleapis.com/v4/spreadsheets/" + id + "/values/A1?valueRenderOption=UNFORMATTED_VALUE", { headers: authHeaders() });
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      var raw = data.values && data.values[0] && data.values[0][0];
+      if (raw) {
+        try {
+          var parsed = JSON.parse(raw);
+          if (parsed && parsed.version === 1 && typeof parsed.days === "object") {
+            state = parsed;
+            ui.activeMode = null;
+          }
+        } catch (e) { /* keep local state if the cloud value is unreadable */ }
+        cloud.status = "synced";
+        render();
+      } else {
+        cloud.status = "synced";
+        render();
+      }
+    }).catch(function () { cloud.status = "error"; render(); });
+  }
+
+  var pushTimer = null;
+  function pushToCloud() {
+    if (!tokenValid()) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(pushToCloudNow, 600);
+  }
+  function pushToCloudNow() {
+    if (!tokenValid() || !cloud.sheetId) return;
+    fetch("https://sheets.googleapis.com/v4/spreadsheets/" + cloud.sheetId + "/values/A1?valueInputOption=RAW", {
+      method: "PUT", headers: authHeaders(), body: JSON.stringify({ values: [[JSON.stringify(state)]] })
+    }).then(function (r) {
+      cloud.status = r.ok ? "synced" : "error";
+      renderSyncBadgeOnly();
+    }).catch(function () { cloud.status = "error"; renderSyncBadgeOnly(); });
+  }
+  function renderSyncBadgeOnly() {
+    var el = document.getElementById("sync-badge");
+    if (!el) return;
+    el.outerHTML = renderSyncBadge();
+    var fresh = document.getElementById("sync-badge");
+    if (fresh) fresh.addEventListener("click", function (ev) { handleAction(fresh.getAttribute("data-action"), fresh, ev); });
+  }
+
+  var APP = document.getElementById("app");
+
+  function render() {
+    if (!state) { renderOnboarding(); return; }
+    reconcileGrants();
+    persist();
+    pushToCloud();
+    var savedScroll = window.scrollY;
+    var html = "";
+    html += renderTopbar();
+    html += renderDashboard();
+    html += renderGrid();
+    html += '<div style="flex:1"></div>';
+    APP.innerHTML = '<div class="app-shell">' + html + "</div>" +
+      renderToast() +
+      renderToolbar() +
+      (ui.settingsOpen ? renderSettings() : "");
+    bindEvents();
+    window.scrollTo(0, savedScroll);
+  }
+
+  function renderOnboarding() {
+    APP.innerHTML =
+      '<div class="onboard-overlay"><div class="onboard-card">' +
+      "<h1>配車板をはじめます</h1>" +
+      "<p>今日時点で実際に残っている有給日数を入力してください。内訳は後から設定で調整できます。</p>" +
+      '<input type="number" id="ob-balance" inputmode="numeric" placeholder="例: 34" />' +
+      '<button class="btn primary" id="ob-start" style="width:100%">はじめる</button>' +
+      "</div></div>";
+    document.getElementById("ob-start").addEventListener("click", function () {
+      var v = document.getElementById("ob-balance").value;
+      var n = v === "" ? 0 : Number(v);
+      if (isNaN(n)) n = 0;
+      state = freshState(n);
+      render();
+    });
+  }
+
+  function renderTopbar() {
+    var p = ui.viewPeriod;
+    return (
+      '<div class="topbar">' +
+      '<button class="nav-btn" data-action="prev-period" aria-label="前の期間">◀</button>' +
+      '<div class="period-label"><div class="period-name">' + periodLabel(p) + "</div>" +
+      '<div class="period-range digits">' + periodRangeLabel(p) + "</div></div>" +
+      '<button class="nav-btn" data-action="next-period" aria-label="次の期間">▶</button>' +
+      renderSyncBadge() +
+      '<button class="icon-btn" data-action="open-settings" aria-label="設定">⚙</button>' +
+      "</div>"
+    );
+  }
+
+  function renderSyncBadge() {
+    var label, action, title;
+    if (cloud.status === "signedout") { label = "🔒"; action = "cloud-login"; title = "Googleでログインして同期"; }
+    else if (cloud.status === "connecting") { label = "…"; action = "cloud-noop"; title = "同期中"; }
+    else if (cloud.status === "synced") { label = "☁"; action = "cloud-logout"; title = "同期ON(タップでログアウト)"; }
+    else { label = "⚠"; action = "cloud-login"; title = "同期エラー(タップで再ログイン)"; }
+    return (
+      '<button type="button" id="sync-badge" class="icon-btn sync-badge sync-' + cloud.status + '" ' +
+      'data-action="' + action + '" aria-label="' + title + '" title="' + title + '">' + label + "</button>"
+    );
+  }
+
+  function renderDashboard() {
+    var p = ui.viewPeriod;
+    var balance = computeLeaveBalance();
+    var worked = countWorked(p);
+    var quota = getQuota(p);
+    var subHtml;
+    if (quota === null) {
+      subHtml = "実績 " + worked + "日／所定未設定";
+    } else {
+      var diff = worked - quota;
+      var diffHtml = diff > 0
+        ? '<span class="diff-plus">+' + diff + "</span>"
+        : diff < 0
+        ? '<span class="diff-minus">' + diff + "</span>"
+        : "±0";
+      subHtml = "実績 " + worked + " / 所定 " + quota + "（" + diffHtml + "）";
+    }
+    return (
+      '<div class="dashboard">' +
+      '<div class="stat-card"><div class="stat-label">有給残日数</div>' +
+      '<div class="stat-panel"><div class="stat-value digits">' + balance + '<span class="unit">日</span></div></div></div>' +
+      '<div class="stat-card"><div class="stat-label">当期実績 / 所定</div>' +
+      '<div class="stat-panel"><div class="stat-value digits" style="font-size:16px">' + worked + (quota !== null ? " / " + quota : "") + "</div></div>" +
+      '<div class="stat-sub">' + subHtml + "</div></div>" +
+      "</div>"
+    );
+  }
+
+  function weekdayCells() {
+    var labels = state.settings.weekStart === "sun" ? ["日","月","火","水","木","金","土"] : ["月","火","水","木","金","土","日"];
+    return '<div class="weekday-row">' + labels.map(function (l) { return '<div class="weekday-cell">' + l + "</div>"; }).join("") + "</div>";
+  }
+
+  function colIndex(dow) {
+    return state.settings.weekStart === "sun" ? dow : (dow + 6) % 7;
+  }
+
+  function renderGrid() {
+    var p = ui.viewPeriod;
+    var dates = periodDates(p);
+    var firstDow = dayOfWeek(dates[0].y, dates[0].m, dates[0].d);
+    var leadCount = colIndex(firstDow);
+    var lead = [];
+    var cursor = dates[0];
+    for (var i = 0; i < leadCount; i++) { cursor = addDays(cursor.y, cursor.m, cursor.d, -1); lead.unshift(cursor); }
+    var totalCells = leadCount + dates.length;
+    var trailCount = (7 - (totalCells % 7)) % 7;
+    var trail = [];
+    cursor = dates[dates.length - 1];
+    for (var j = 0; j < trailCount; j++) { cursor = addDays(cursor.y, cursor.m, cursor.d, 1); trail.push(cursor); }
+
+    var cells = lead.map(function (dt) { return dayCellHtml(dt, true); })
+      .concat(dates.map(function (dt) { return dayCellHtml(dt, false); }))
+      .concat(trail.map(function (dt) { return dayCellHtml(dt, true); }));
+
+    return '<div class="grid-wrap">' + weekdayCells() + '<div class="day-grid">' + cells.join("") + "</div></div>";
+  }
+
+  function dayCellHtml(dt, dim) {
+    var k = dkey(dt.y, dt.m, dt.d);
+    var entry = state.days[k];
+    var status = entry ? entry.status : null;
+    var mark = entry && entry.loadingMark;
+    var isToday = k === TODAY_KEY;
+    var mismatch = mark && status !== "work";
+    var red = isRedDate(dt.y, dt.m, dt.d);
+    var cls = "day-cell" + (dim ? " dim" : "") + (isToday ? " today" : "") + (!status ? " unset" : "");
+    return (
+      '<button type="button" class="' + cls + '" data-action="tap-day" data-date="' + k + '"' +
+      (status ? ' data-status="' + status + '"' : "") + ">" +
+      '<span class="day-num digits' + (red ? " holiday" : "") + '">' + dt.d + "</span>" +
+      (mark ? '<span class="stamp-badge' + (mismatch ? " mismatch" : "") + '"></span>' : "") +
+      "</button>"
+    );
+  }
+
+  function renderToolbar() {
+    var buttons = MODE_BUTTONS.map(function (m) {
+      var pressed = ui.activeMode === m.key;
+      var icon = '<span class="mode-swatch"' + (m.isStamp ? ' style="border-radius:50%"' : "") + "></span>";
+      return (
+        '<button type="button" class="mode-btn" data-action="toggle-mode" data-mode="' + m.key + '" ' +
+        'aria-pressed="' + pressed + '" style="--mode-color: var(' + m.color + ')">' +
+        icon + "<span>" + m.label + "</span></button>"
+      );
+    }).join("");
+    return '<div class="mode-toolbar">' + buttons + "</div>";
+  }
+
+  function editLabel(k, prevEntry, nextEntry) {
+    var parts = k.split("-").map(Number);
+    var md = parts[1] + "/" + parts[2];
+    var prevStatus = prevEntry ? prevEntry.status : null;
+    var nextStatus = nextEntry ? nextEntry.status : null;
+    if (nextStatus !== prevStatus) {
+      return nextStatus ? md + "を" + STATUS_LABEL[nextStatus] + "に変更しました" : md + "を未入力に戻しました";
+    }
+    var nextMark = nextEntry && nextEntry.loadingMark;
+    return nextMark ? md + "に積み込み印を付けました" : md + "の積み込み印を外しました";
+  }
+
+  function renderToast() {
+    if (!ui.lastEdit) return "";
+    return (
+      '<div class="toast"><span>' + ui.lastEdit.label + "</span>" +
+      '<button type="button" class="toast-undo" data-action="undo-last">元に戻す</button></div>'
+    );
+  }
+
+  function fyOptions() {
+    var cur = fiscalYearOf(ui.viewPeriod);
+    var years = [cur - 1, cur, cur + 1, cur + 2];
+    if (ui.settingsFY === null) ui.settingsFY = cur;
+    return years.map(function (y) {
+      return '<option value="' + y + '"' + (y === ui.settingsFY ? " selected" : "") + ">" + y + "年度（" + y + "/4月期～" + (y + 1) + "/3月期）</option>";
+    }).join("");
+  }
+
+  function quotaRows() {
+    var fy = ui.settingsFY;
+    var yObj = state.quotas[fy] || {};
+    return MONTH_ORDER.map(function (mk) {
+      var m = Number(mk);
+      var pseudoP = { startY: m >= 4 ? fy : fy + 1, startM: m };
+      var range = periodRangeLabel(pseudoP);
+      var maxDays = periodDates(pseudoP).length;
+      var v = yObj[mk];
+      var over = v !== undefined && v !== null && v !== "" && Number(v) > maxDays;
+      return (
+        '<div class="quota-row"><div><div class="month-label">' + m + "月期</div>" +
+        '<div class="month-range digits">' + range + "</div></div>" +
+        '<div><input type="number" class="num-input" inputmode="numeric" min="0" max="31" ' +
+        'data-action="set-quota" data-month="' + mk + '" value="' + (v === undefined || v === null ? "" : v) + '" style="width:64px;padding:6px;border-radius:4px;border:1px solid var(--line);background:var(--paper-raised);color:var(--ink);text-align:right" />' +
+        (over ? '<div class="quota-warn">期間日数(' + maxDays + ')を超えています</div>' : "") +
+        "</div></div>"
+      );
+    }).join("");
+  }
+
+  function renderSettings() {
+    var lots = computeLeaveLots();
+    var lotRows = lots.filter(function (l) { return l.amount > 0 || !l.isBaseline; }).map(function (l) {
+      var label = l.isBaseline ? "初期設定分" : l.grantedOn;
+      return "<tr><td>" + label + (l.expired ? "（失効）" : "") + "</td><td>" + l.amount + "</td><td>" + l.consumed + "</td><td>" + (l.expired ? 0 : l.remaining) + "</td><td>" + (l.expiresOn || "失効なし") + "</td></tr>";
+    }).join("");
+    var lastBackup = state.lastBackupAt;
+    var stale = true;
+    if (lastBackup) {
+      var lb = lastBackup.slice(0, 10);
+      var ly = Number(lb.slice(0,4)), lm = Number(lb.slice(5,7)), ld = Number(lb.slice(8,10));
+      var cutoff = addDays(TODAY.y, TODAY.m, TODAY.d, -14);
+      stale = cmpYmd({y: ly, m: lm, d: ld}, cutoff) < 0;
+    }
+    return (
+      '<div class="settings-panel">' +
+      '<div class="settings-header"><button class="icon-btn" data-action="close-settings">←</button><h1>設定</h1></div>' +
+
+      '<div class="settings-section"><h2>有給設定</h2>' +
+      '<div class="field-row"><label>手動補正値（日）</label>' +
+      '<input type="number" class="num-input" inputmode="numeric" id="leave-adj" value="' + state.leaveManualAdjustment + '" data-action="set-leave-adj" /></div>' +
+      '<div class="help-text">現在の残日数と画面の表示がズレている場合に、この値を調整して合わせてください。初回登録時の残日数はここに反映されています。</div>' +
+      (lotRows ? '<table class="lot-table"><thead><tr><th>区分</th><th>付与</th><th>消化</th><th>残</th><th>失効日</th></tr></thead><tbody>' + lotRows + "</tbody></table>" : '<div class="help-text">まだ記録がありません(毎年2月15日に自動で有給が追加されます)</div>') +
+      "</div>" +
+
+      '<div class="settings-section"><h2>年間所定日数</h2>' +
+      '<div class="fy-row"><select id="fy-select" data-action="change-fy">' + fyOptions() + "</select>" +
+      '<button type="button" class="fy-copy-btn" data-action="copy-prev-fy">前年と同じ</button></div>' +
+      quotaRows() +
+      '<div class="help-text">毎年3月に会社から通知される次年度分の12期間分をここでまとめて入力してください。</div>' +
+      "</div>" +
+
+      '<div class="settings-section"><h2>表示設定</h2>' +
+      '<div class="field-row"><label>週の始まり</label><select class="week-select" data-action="set-week-start">' +
+      '<option value="mon"' + (state.settings.weekStart === "mon" ? " selected" : "") + ">月曜始まり</option>" +
+      '<option value="sun"' + (state.settings.weekStart === "sun" ? " selected" : "") + ">日曜始まり</option>" +
+      "</select></div></div>" +
+
+      '<div class="settings-section"><h2>データ管理</h2>' +
+      '<div class="backup-status' + (stale ? " stale" : "") + '">' +
+      (lastBackup ? "最終バックアップ: " + lastBackup.slice(0, 10) + (stale ? "（しばらく取っていません）" : "") : "まだバックアップを取っていません") +
+      "</div>" +
+      '<div class="btn-row"><button type="button" class="btn primary" data-action="do-backup">バックアップを保存</button>' +
+      '<button type="button" class="btn" data-action="do-import">復元する</button></div>' +
+      '<input type="file" id="import-file" accept="application/json" />' +
+      '<div class="help-text">復元(読み込み)を実行すると、現在のデータはすべて上書きされます。</div>' +
+      "</div>" +
+      "</div>"
+    );
+  }
+
+  /* ---------- events ---------- */
+  function bindEvents() {
+    APP.querySelectorAll("[data-action]").forEach(function (el) {
+      var action = el.getAttribute("data-action");
+      if (el.tagName === "SELECT") {
+        el.addEventListener("change", function () { handleAction(action, el); });
+      } else if (el.type === "number") {
+        el.addEventListener("change", function () { handleAction(action, el); });
+      } else if (el.id === "import-file") {
+        el.addEventListener("change", function () { handleImportFile(el); });
+      } else {
+        el.addEventListener("click", function (ev) { handleAction(action, el, ev); });
+      }
+    });
+  }
+
+  function handleAction(action, el, ev) {
+    switch (action) {
+      case "prev-period": ui.viewPeriod = prevPeriod(ui.viewPeriod); render(); break;
+      case "next-period": ui.viewPeriod = nextPeriod(ui.viewPeriod); render(); break;
+      case "open-settings": ui.activeMode = null; ui.settingsOpen = true; ui.settingsFY = fiscalYearOf(ui.viewPeriod); render(); break;
+      case "close-settings": ui.settingsOpen = false; render(); break;
+      case "toggle-mode": {
+        var mode = el.getAttribute("data-mode");
+        ui.activeMode = ui.activeMode === mode ? null : mode;
+        render();
+        break;
+      }
+      case "tap-day": {
+        if (!ui.activeMode) break;
+        var k = el.getAttribute("data-date");
+        var prev = state.days[k] ? Object.assign({}, state.days[k]) : null;
+        var next;
+        if (ui.activeMode === "mark") {
+          next = { status: prev ? prev.status : null, loadingMark: !(prev && prev.loadingMark) };
+        } else {
+          var curStatus = prev ? prev.status : null;
+          next = { status: curStatus === ui.activeMode ? null : ui.activeMode, loadingMark: !!(prev && prev.loadingMark) };
+        }
+        var nextForStorage = (next.status || next.loadingMark) ? next : null;
+        if (nextForStorage) { state.days[k] = nextForStorage; } else { delete state.days[k]; }
+        clearTimeout(toastTimer);
+        ui.lastEdit = { date: k, prevEntry: prev, label: editLabel(k, prev, nextForStorage) };
+        toastTimer = setTimeout(function () { ui.lastEdit = null; render(); }, 4000);
+        render();
+        break;
+      }
+      case "undo-last": {
+        if (!ui.lastEdit) break;
+        clearTimeout(toastTimer);
+        var uk = ui.lastEdit.date;
+        if (ui.lastEdit.prevEntry) { state.days[uk] = ui.lastEdit.prevEntry; } else { delete state.days[uk]; }
+        ui.lastEdit = null;
+        render();
+        break;
+      }
+      case "set-leave-adj": {
+        var v = Number(el.value);
+        state.leaveManualAdjustment = isNaN(v) ? 0 : v;
+        render();
+        break;
+      }
+      case "change-fy": ui.settingsFY = Number(el.value); render(); break;
+      case "copy-prev-fy": {
+        var prevFY = ui.settingsFY - 1;
+        var src = state.quotas[prevFY];
+        if (src) { state.quotas[ui.settingsFY] = Object.assign({}, state.quotas[ui.settingsFY] || {}, src); }
+        render();
+        break;
+      }
+      case "set-quota": setQuota(ui.settingsFY, el.getAttribute("data-month"), el.value); render(); break;
+      case "set-week-start": state.settings.weekStart = el.value; render(); break;
+      case "do-backup": doBackup(); break;
+      case "do-import": document.getElementById("import-file").click(); break;
+      case "cloud-login": cloudLogin(); break;
+      case "cloud-logout": cloudLogout(); break;
+      case "cloud-noop": break;
+    }
+  }
+
+  function doBackup() {
+    var data = JSON.stringify(state, null, 2);
+    var blob = new Blob([data], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "ka-calendar-backup-" + TODAY_KEY + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    state.lastBackupAt = new Date().toISOString();
+    render();
+  }
+
+  function handleImportFile(input) {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var parsed = JSON.parse(String(reader.result));
+        if (!parsed || parsed.version !== 1 || typeof parsed.days !== "object") {
+          window.alert("ファイル形式が正しくありません。");
+          return;
+        }
+        state = parsed;
+        ui.activeMode = null;
+        ui.lastEdit = null;
+        ui.settingsFY = fiscalYearOf(ui.viewPeriod);
+        render();
+      } catch (e) {
+        window.alert("読み込みに失敗しました。");
+      }
+    };
+    reader.readAsText(file);
+    input.value = "";
+  }
+
+  /* ---------- boot ---------- */
+  state = load();
+  render();
+})();
+</script>
+</body>
+</html>
