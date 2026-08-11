@@ -430,6 +430,7 @@
   var GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
   var SHEET_NAME = "Ka Calendar Data";
   var SHEET_ID_KEY = "kaCalendar:sheetId";
+  var TOKEN_KEY = "kaCalendar:token";
   var STATUS_LABEL = { work: "出勤", off: "公休", leave: "有給消化", pending: "休み希望" };
   var MONTH_ORDER = ["4","5","6","7","8","9","10","11","12","1","2","3"];
 
@@ -665,6 +666,37 @@
 
   function cloudReady() { return !!(window.google && window.google.accounts && window.google.accounts.oauth2); }
 
+  // Android Chrome blocks the hidden-iframe silent re-auth outright (Google answers
+  // interaction_required), so the access token is cached locally and reused until it
+  // expires. Google caps these at ~1h, so this removes the re-tap only for reasonably
+  // prompt return visits -- after that the badge falls back to a manual tap.
+  function storeToken(token, expiresAt) {
+    cloud.token = token;
+    cloud.tokenExpiresAt = expiresAt;
+    try {
+      localStorage.setItem(TOKEN_KEY, JSON.stringify({ token: token, expiresAt: expiresAt }));
+    } catch (e) { /* private mode / quota -- session-only auth is an acceptable fallback */ }
+  }
+
+  function clearStoredToken() {
+    cloud.token = null;
+    cloud.tokenExpiresAt = 0;
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+  }
+
+  function restoreStoredToken() {
+    var raw;
+    try { raw = localStorage.getItem(TOKEN_KEY); } catch (e) { return false; }
+    if (!raw) return false;
+    try {
+      var saved = JSON.parse(raw);
+      if (!saved || !saved.token || Date.now() >= saved.expiresAt - 60000) { clearStoredToken(); return false; }
+      cloud.token = saved.token;
+      cloud.tokenExpiresAt = saved.expiresAt;
+      return true;
+    } catch (e) { clearStoredToken(); return false; }
+  }
+
   function ensureTokenClient() {
     if (cloud.tokenClient) return cloud.tokenClient;
     cloud.tokenClient = google.accounts.oauth2.initTokenClient({
@@ -674,8 +706,7 @@
         // Only the explicit (button-tap) login path reaches this callback; the
         // page-load path goes through attemptSilentReconnect instead.
         if (resp.error) { cloud.status = "error"; render(); return; }
-        cloud.token = resp.access_token;
-        cloud.tokenExpiresAt = Date.now() + (Number(resp.expires_in) || 3300) * 1000;
+        storeToken(resp.access_token, Date.now() + (Number(resp.expires_in) || 3300) * 1000);
         cloud.status = "connecting";
         render();
         pullFromCloud();
@@ -718,8 +749,7 @@
       cleanup();
       cloud.lastSilentResult = reason || (token ? "ok" : "unknown");
       if (!token) { renderSyncBadgeOnly(); return; }
-      cloud.token = token;
-      cloud.tokenExpiresAt = Date.now() + (Number(expiresIn) || 3300) * 1000;
+      storeToken(token, Date.now() + (Number(expiresIn) || 3300) * 1000);
       cloud.status = "connecting";
       render();
       pullFromCloud();
@@ -747,7 +777,9 @@
 
   function cloudLogout() {
     if (cloud.token && cloudReady()) { google.accounts.oauth2.revoke(cloud.token, function () {}); }
-    cloud.token = null; cloud.tokenExpiresAt = 0; cloud.status = "signedout";
+    clearStoredToken();
+    cloud.status = "signedout";
+    cloud.lastSilentResult = "ログアウト済み";
     render();
   }
 
@@ -784,7 +816,19 @@
   function pullFromCloud() {
     findOrCreateSheet().then(function (id) {
       return fetch("https://sheets.googleapis.com/v4/spreadsheets/" + id + "/values/A1?valueRenderOption=UNFORMATTED_VALUE", { headers: authHeaders() });
-    }).then(function (r) { return r.json(); }).then(function (data) {
+    }).then(function (r) {
+      // A cached token can be revoked or expired server-side; drop it and show the
+      // plain "tap to sign in" state rather than a dead-end error.
+      if (r.status === 401 || r.status === 403) {
+        clearStoredToken();
+        cloud.status = "signedout";
+        cloud.lastSilentResult = "保存済み認証が失効(再ログインが必要)";
+        render();
+        return null;
+      }
+      return r.json();
+    }).then(function (data) {
+      if (!data) return;
       var raw = data.values && data.values[0] && data.values[0][0];
       if (raw) {
         try {
@@ -1205,8 +1249,15 @@
 
   /* ---------- boot ---------- */
   state = load();
-  render();
-  attemptSilentReconnect();
+  if (restoreStoredToken()) {
+    cloud.status = "connecting";
+    cloud.lastSilentResult = "保存済みの認証を再利用";
+    render();
+    pullFromCloud();
+  } else {
+    render();
+    attemptSilentReconnect();
+  }
 })();
 </script>
 </body>
