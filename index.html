@@ -660,7 +660,7 @@
 
   /* ---------- rendering ---------- */
   /* ---------- cloud sync (Google Sheets via client-side OAuth, no server) ---------- */
-  var cloud = { token: null, tokenExpiresAt: 0, sheetId: null, tokenClient: null, status: "signedout" };
+  var cloud = { token: null, tokenExpiresAt: 0, sheetId: null, tokenClient: null, status: "signedout", lastSilentResult: "未実行" };
   // status: "signedout" | "connecting" | "synced" | "error"
 
   function cloudReady() { return !!(window.google && window.google.accounts && window.google.accounts.oauth2); }
@@ -712,11 +712,12 @@
     function cleanup() {
       if (frame.parentNode) frame.parentNode.removeChild(frame);
     }
-    function finish(token, expiresIn) {
+    function finish(token, expiresIn, reason) {
       if (settled) return;
       settled = true;
       cleanup();
-      if (!token) return;
+      cloud.lastSilentResult = reason || (token ? "ok" : "unknown");
+      if (!token) { renderSyncBadgeOnly(); return; }
       cloud.token = token;
       cloud.tokenExpiresAt = Date.now() + (Number(expiresIn) || 3300) * 1000;
       cloud.status = "connecting";
@@ -725,19 +726,23 @@
     }
 
     frame.addEventListener("load", function () {
-      var hash;
+      var loc;
       try {
         // Same-origin only once Google has redirected back to us; while still on
         // accounts.google.com this throws, which just means "not done yet".
-        hash = frame.contentWindow.location.hash;
+        loc = frame.contentWindow.location;
+        var probe = loc.hash;
       } catch (e) { return; }
-      if (!hash) { finish(null); return; }
-      var parsed = new URLSearchParams(hash.replace(/^#/, ""));
-      finish(parsed.get("access_token"), parsed.get("expires_in"));
+      var raw = (loc.hash || loc.search || "").replace(/^[#?]/, "");
+      if (!raw) { finish(null, null, "空の応答"); return; }
+      var parsed = new URLSearchParams(raw);
+      var token = parsed.get("access_token");
+      if (token) { finish(token, parsed.get("expires_in"), "ok"); return; }
+      finish(null, null, parsed.get("error") || "不明な応答");
     });
 
     document.body.appendChild(frame);
-    setTimeout(function () { finish(null); }, 8000);
+    setTimeout(function () { finish(null, null, "タイムアウト(ブラウザがブロックした可能性)"); }, 8000);
   }
 
   function cloudLogout() {
@@ -1070,6 +1075,10 @@
       '<button type="button" class="btn" data-action="do-import">復元する</button></div>' +
       '<input type="file" id="import-file" accept="application/json" />' +
       '<div class="help-text">復元(読み込み)を実行すると、現在のデータはすべて上書きされます。</div>' +
+      "</div>" +
+
+      '<div class="settings-section"><h2>同期の状態</h2>' +
+      '<div class="help-text">状態: ' + cloud.status + "<br />自動ログインの結果: " + cloud.lastSilentResult + "</div>" +
       "</div>" +
       "</div>"
     );
