@@ -157,7 +157,9 @@
   .stat-sub .diff-minus { color: var(--danger); font-weight: 700; }
 
   /* ---------- Grid ---------- */
-  .grid-wrap { overflow-x: auto; padding: 0 12px calc(72px + env(safe-area-inset-bottom)); }
+  /* Bottom padding clears the fixed toolbar, which is three rows tall (statuses / marks /
+     メモ) -- keep these in step if a row is ever added or removed. */
+  .grid-wrap { overflow-x: auto; padding: 0 12px calc(166px + env(safe-area-inset-bottom)); }
   .weekday-row, .day-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(38px, 1fr));
@@ -178,23 +180,41 @@
     border: 1px solid var(--line);
     background: var(--paper-raised);
     display: flex;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
     justify-content: flex-start;
+    gap: 1px;
     padding: 4px;
     cursor: pointer;
     min-height: 44px;
+    overflow: hidden;
   }
-  .day-cell .day-num { font-size: 12px; font-weight: 600; }
+  /* Date and its marks share one row; the memo gets the line underneath. A 44px cell only
+     leaves ~34px of usable width, so the marks are sized for the realistic case of one or
+     two per day -- three will crowd the row, especially on a circled holiday date. */
+  /* 1px gaps, not 2 -- the tightest case (a circled holiday date plus two marks) needs
+     every pixel of the 34px inner width to avoid clipping. */
+  .day-head { display: flex; align-items: center; gap: 1px; min-height: 14px; }
+  .day-cell .day-num { font-size: 12px; font-weight: 600; flex-shrink: 0; }
   .day-cell .day-num.holiday {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 2px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0;
     border-radius: 50%;
-    border: 1.5px solid var(--stamp-strong);
+    border: 1px solid var(--stamp-strong);
     color: var(--stamp-strong);
+  }
+  .day-memo {
+    font-size: 9px;
+    line-height: 1.2;
+    color: var(--ink-soft);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
   }
   .day-cell.dim { opacity: 0.4; }
   .day-cell.unset {
@@ -210,31 +230,21 @@
      there rather than as its own background. outline (not border) keeps the grid from
      shifting and coexists with .today's inset ring. */
   .day-cell.wish { outline: 2px solid var(--status-wish); outline-offset: -1px; }
-  .stamp-badges {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    display: flex;
-    gap: 1px;
-  }
+  .stamp-badges { display: flex; align-items: center; gap: 1px; min-width: 0; }
   .stamp-badge {
-    width: 13px;
-    height: 13px;
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
     border-radius: 50%;
     background: var(--stamp);
-    color: #fff;
-    font-size: 7px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transform: rotate(-10deg);
-    border: 1.5px solid var(--paper);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.14);
+    box-shadow: 0 0 0 0.5px rgba(0,0,0,0.10);
   }
+  /* 安全会議 is squared off so it reads differently from the round marks at a glance --
+     at 8px the fill colors alone are hard to tell apart. */
+  .stamp-badge.square { border-radius: 1.5px; }
   /* Anomalous combination (mark set on a non-work day): ring it in ink rather than a
-     pastel, so it stays obviously different from a normal badge in both themes. */
-  .stamp-badge.mismatch { border: 2px solid var(--ink); }
+     pastel. Only 1px here -- a thicker ring would swallow an 8px dot whole. */
+  .stamp-badge.mismatch { box-shadow: 0 0 0 1px var(--ink); }
 
   /* ---------- Mode toolbar (pen-and-paint input) ---------- */
   .mode-toolbar {
@@ -243,15 +253,17 @@
     max-width: 480px;
     margin: 0 auto;
     z-index: 20;
-    display: flex;
-    flex-wrap: wrap;
+    /* Explicit 4-up grid rather than flex-wrap: it pins the intended grouping -- statuses
+       on the first row, marks on the second -- instead of letting it drift with the button
+       count. メモ spans the full width on its own row because it paints nothing. */
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 4px;
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     background: var(--paper);
     border-top: 1px solid var(--line);
   }
   .mode-btn {
-    flex: 1 1 22%;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -266,6 +278,7 @@
     font-size: 11px;
     cursor: pointer;
   }
+  .mode-btn.wide { grid-column: 1 / -1; flex-direction: row; min-height: 38px; }
   .mode-btn[aria-pressed="true"] {
     box-shadow: 0 0 0 2px var(--mode-color) inset;
     background: var(--paper-sunken);
@@ -277,7 +290,7 @@
   .toast {
     position: fixed;
     left: 0; right: 0;
-    bottom: calc(58px + env(safe-area-inset-bottom));
+    bottom: calc(162px + env(safe-area-inset-bottom));
     max-width: 480px;
     margin: 0 auto;
     z-index: 21;
@@ -372,6 +385,15 @@
     width: 100%; padding: 10px; font-size: 20px; border-radius: 4px; border: 1px solid var(--line);
     background: var(--paper-raised); color: var(--ink); text-align: center; margin-bottom: 14px;
   }
+
+  /* ---------- Memo dialog ---------- */
+  .memo-card h1 { font-size: 15px; margin: 0 0 2px; }
+  .memo-card .memo-sub { font-size: 11px; color: var(--ink-soft); margin: 0 0 12px; }
+  .memo-card input[type="text"] {
+    width: 100%; padding: 10px; font-size: 16px; border-radius: 4px; border: 1px solid var(--line);
+    background: var(--paper-raised); color: var(--ink); margin-bottom: 6px;
+  }
+  .memo-card .help-text { margin: 0 0 14px; }
 </style>
 </head>
 <body>
@@ -508,7 +530,7 @@
 
   /* ---------- state ---------- */
   var state = null;
-  var ui = { activeMode: null, lastEdit: null, settingsOpen: false, settingsFY: null, viewPeriod: periodOf(TODAY.y, TODAY.m, TODAY.d) };
+  var ui = { activeMode: null, lastEdit: null, settingsOpen: false, settingsFY: null, viewPeriod: periodOf(TODAY.y, TODAY.m, TODAY.d), memoDate: null };
   var toastTimer = null;
   // Array order drives the toolbar order: the first four are exclusive statuses (top row),
   // the rest are marks that stack on top of a status (bottom row). 希望休 is a mark rather
@@ -520,8 +542,9 @@
     { key: "off", label: "法休", color: "--status-off" },
     { key: "mark", label: "拠点", color: "--stamp", isStamp: true, field: "loadingMark" },
     { key: "dayShift", label: "日勤", color: "--stamp2", isStamp: true, field: "dayShiftMark" },
-    { key: "safety", label: "安全会議", color: "--stamp3", isStamp: true, field: "safetyMark" },
-    { key: "wish", label: "希望休", color: "--status-wish", isStamp: true, field: "wishMark", isRing: true }
+    { key: "safety", label: "安全会議", color: "--stamp3", isStamp: true, field: "safetyMark", square: true },
+    { key: "wish", label: "希望休", color: "--status-wish", isStamp: true, field: "wishMark", isRing: true },
+    { key: "memo", label: "メモ", color: "--ink-faint", isMemo: true }
   ];
   function modeByKey(key) {
     for (var i = 0; i < MODE_BUTTONS.length; i++) { if (MODE_BUTTONS[i].key === key) return MODE_BUTTONS[i]; }
@@ -530,6 +553,18 @@
   function hasAnyMark(entry) {
     if (!entry) return false;
     return MODE_BUTTONS.some(function (m) { return m.isStamp && entry[m.field]; });
+  }
+  // A day is worth storing if it carries anything at all -- status, a mark, or a memo.
+  function hasContent(entry) {
+    if (!entry) return false;
+    return !!(entry.status || entry.memo || hasAnyMark(entry));
+  }
+  // Memo text is user input spliced into innerHTML, so it has to be escaped or a stray
+  // "<" silently breaks the whole grid render.
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
   }
 
   function freshState(initialBalance) {
@@ -557,7 +592,7 @@
       if (!e) { delete s.days[k]; return; }
       if (e.status === "pending") { e.status = null; e.wishMark = true; }
       if (e.restoreStatus === "pending") { e.restoreStatus = null; }
-      if (!e.status && !hasAnyMark(e)) delete s.days[k];
+      if (!hasContent(e)) delete s.days[k];
     });
     return s;
   }
@@ -860,9 +895,19 @@
     APP.innerHTML = '<div class="app-shell">' + html + "</div>" +
       renderToast() +
       renderToolbar() +
-      (ui.settingsOpen ? renderSettings() : "");
+      (ui.settingsOpen ? renderSettings() : "") +
+      renderMemoDialog();
     bindEvents();
     window.scrollTo(0, savedScroll);
+    var memoInput = document.getElementById("memo-input");
+    if (memoInput) {
+      memoInput.focus();
+      memoInput.select();
+      memoInput.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter") { ev.preventDefault(); handleAction("memo-save"); }
+        else if (ev.key === "Escape") { ui.memoDate = null; render(); }
+      });
+    }
   }
 
   function renderOnboarding() {
@@ -977,14 +1022,19 @@
     var badges = entry
       ? MODE_BUTTONS.filter(function (m) { return m.isStamp && !m.isRing && entry[m.field]; }).map(function (m) {
           var mismatch = status !== "work";
-          return '<span class="stamp-badge' + (mismatch ? " mismatch" : "") + '" style="background:var(' + m.color + ')"></span>';
+          return '<span class="stamp-badge' + (m.square ? " square" : "") + (mismatch ? " mismatch" : "") +
+            '" style="background:var(' + m.color + ')"></span>';
         }).join("")
       : "";
+    var memo = entry && entry.memo ? entry.memo : "";
     return (
       '<button type="button" class="' + cls + '" data-action="tap-day" data-date="' + k + '"' +
       (status ? ' data-status="' + status + '"' : "") + ">" +
+      '<span class="day-head">' +
       '<span class="day-num digits' + (red ? " holiday" : "") + '">' + dt.d + "</span>" +
       (badges ? '<span class="stamp-badges">' + badges + "</span>" : "") +
+      "</span>" +
+      (memo ? '<span class="day-memo" title="' + esc(memo) + '">' + esc(memo) + "</span>" : "") +
       "</button>"
     );
   }
@@ -992,14 +1042,20 @@
   function renderToolbar() {
     var buttons = MODE_BUTTONS.map(function (m) {
       var pressed = ui.activeMode === m.key;
-      // The swatch previews how the mode actually draws on a day: a square for a status
-      // fill, a dot for a badge, a hollow ring for 希望休's outline.
-      var swatchStyle = m.isRing
-        ? ' style="background:transparent;border:2px solid var(--mode-color)"'
-        : (m.isStamp ? ' style="border-radius:50%"' : "");
-      var icon = '<span class="mode-swatch"' + swatchStyle + "></span>";
+      // The swatch previews how the mode actually draws on a day: a filled square for a
+      // status fill, a dot (or small square for 安全会議) for a mark, a hollow ring for
+      // 希望休's outline, and a pencil for the memo mode, which paints nothing.
+      var icon;
+      if (m.isMemo) {
+        icon = '<span class="mode-swatch" style="background:transparent;font-size:12px;line-height:14px;width:auto">✎</span>';
+      } else {
+        var swatchStyle = m.isRing
+          ? ' style="background:transparent;border:2px solid var(--mode-color)"'
+          : (m.isStamp ? ' style="border-radius:' + (m.square ? "2px" : "50%") + '"' : "");
+        icon = '<span class="mode-swatch"' + swatchStyle + "></span>";
+      }
       return (
-        '<button type="button" class="mode-btn" data-action="toggle-mode" data-mode="' + m.key + '" ' +
+        '<button type="button" class="mode-btn' + (m.isMemo ? " wide" : "") + '" data-action="toggle-mode" data-mode="' + m.key + '" ' +
         'aria-pressed="' + pressed + '" style="--mode-color: var(' + m.color + ')">' +
         icon + "<span>" + m.label + "</span></button>"
       );
@@ -1026,6 +1082,27 @@
     return (
       '<div class="toast"><span>' + ui.lastEdit.label + "</span>" +
       '<button type="button" class="toast-undo" data-action="undo-last">元に戻す</button></div>'
+    );
+  }
+
+  function renderMemoDialog() {
+    if (!ui.memoDate) return "";
+    var k = ui.memoDate;
+    var parts = k.split("-").map(Number);
+    var entry = state.days[k];
+    var cur = entry && entry.memo ? entry.memo : "";
+    var dow = ["日","月","火","水","木","金","土"][dayOfWeek(parts[0], parts[1], parts[2])];
+    return (
+      '<div class="onboard-overlay" data-action="memo-backdrop"><div class="onboard-card memo-card">' +
+      "<h1>" + parts[1] + "月" + parts[2] + "日（" + dow + "）のメモ</h1>" +
+      '<p class="memo-sub">' + (entry && entry.status ? STATUS_LABEL[entry.status] : "未入力") + "</p>" +
+      '<input type="text" id="memo-input" maxlength="20" placeholder="例: 健診" value="' + esc(cur) + '" />' +
+      '<div class="help-text">マスに表示されるのは先頭の数文字です。長い場合は「…」と省略され、全文はこの画面で確認できます。</div>' +
+      '<div class="btn-row">' +
+      '<button type="button" class="btn" data-action="memo-cancel">やめる</button>' +
+      '<button type="button" class="btn" data-action="memo-clear">消す</button>' +
+      '<button type="button" class="btn primary" data-action="memo-save">保存</button>' +
+      "</div></div></div>"
     );
   }
 
@@ -1147,8 +1224,11 @@
         break;
       }
       case "tap-day": {
-        if (!ui.activeMode) break;
         var k = el.getAttribute("data-date");
+        // With no pen selected a tap is otherwise dead, so it opens the memo -- the quick
+        // way to read one. The メモ mode reaches the same dialog and makes the feature
+        // discoverable for anyone who never thinks to tap a bare day.
+        if (!ui.activeMode || ui.activeMode === "memo") { ui.memoDate = k; render(); break; }
         var prev = state.days[k] ? Object.assign({}, state.days[k]) : null;
         var mode = modeByKey(ui.activeMode);
         var next = Object.assign({}, prev || {});
@@ -1167,7 +1247,7 @@
             next.status = ui.activeMode;
           }
         }
-        var nextForStorage = (next.status || hasAnyMark(next)) ? next : null;
+        var nextForStorage = hasContent(next) ? next : null;
         if (nextForStorage) { state.days[k] = nextForStorage; } else { delete state.days[k]; }
         clearTimeout(toastTimer);
         ui.lastEdit = { date: k, prevEntry: prev, label: editLabel(k, prev, nextForStorage, mode) };
@@ -1181,6 +1261,32 @@
         var uk = ui.lastEdit.date;
         if (ui.lastEdit.prevEntry) { state.days[uk] = ui.lastEdit.prevEntry; } else { delete state.days[uk]; }
         ui.lastEdit = null;
+        render();
+        break;
+      }
+      // Only a tap on the backdrop itself dismisses; clicks inside the card bubble up here
+      // too, and without this check typing in the field would close the dialog.
+      case "memo-backdrop": if (ev && ev.target !== el) break; ui.memoDate = null; render(); break;
+      case "memo-cancel": ui.memoDate = null; render(); break;
+      case "memo-save":
+      case "memo-clear": {
+        var mk = ui.memoDate;
+        if (!mk) break;
+        var input = document.getElementById("memo-input");
+        var text = action === "memo-clear" ? "" : (input ? input.value.trim() : "");
+        var mPrev = state.days[mk] ? Object.assign({}, state.days[mk]) : null;
+        var mNext = Object.assign({}, mPrev || {});
+        if (text) { mNext.memo = text; } else { delete mNext.memo; }
+        var mStore = hasContent(mNext) ? mNext : null;
+        if (mStore) { state.days[mk] = mStore; } else { delete state.days[mk]; }
+        var mParts = mk.split("-").map(Number);
+        clearTimeout(toastTimer);
+        ui.lastEdit = {
+          date: mk, prevEntry: mPrev,
+          label: mParts[1] + "/" + mParts[2] + (text ? "のメモを保存しました" : "のメモを消しました")
+        };
+        toastTimer = setTimeout(function () { ui.lastEdit = null; render(); }, 4000);
+        ui.memoDate = null;
         render();
         break;
       }
