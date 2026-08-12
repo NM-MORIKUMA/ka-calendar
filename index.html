@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>出勤カレンダー</title>
 <style>
-  /* Macaron/pastel palette. Pastels are light by definition, so fills and text need
-     separate tokens: --accent/--stamp are the soft fill colors, and the -strong
-     variants are the readable versions used for text and thin lines. "Strong" means
-     darker in light mode and lighter in dark mode -- never a naive inversion. */
+  /* Macaron/pastel palette. Always light -- the app intentionally does not follow
+     system dark mode (mixing these light pastels into a dark ground desaturated them
+     into mud and collapsed 有給/希望 into near-identical hues). --accent/--stamp are
+     the soft fill colors; the -strong variants are the darker, readable versions used
+     for text and thin lines (leave-balance figure, sync badge, holiday dates). */
   :root {
     --paper: #FAF6F4;
     --paper-raised: #FFFCFB;
@@ -31,80 +32,6 @@
     --border-mix: 85%;
     --shadow: 0 8px 24px rgba(122, 111, 115, 0.18);
     --radius: 6px;
-    color-scheme: light;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --paper: #211E24;
-      --paper-raised: #2B2730;
-      --paper-sunken: #191619;
-      --ink: #EDE6EA;
-      --ink-soft: #B0A5AC;
-      --ink-faint: #948A91;
-      --accent: #8ED3B8;
-      --accent-strong: #A8E3C8;
-      --accent-ink: #1E2A25;
-      --status-work: #8FB4DB;
-      --status-off: #A5CFB0;
-      --status-leave: #DCC98A;
-      --status-pending: #E8AE8A;
-      --stamp: #E8899E;
-      --stamp-strong: #F0A4B6;
-      --line: #3A343F;
-      --danger: #EE8FA4;
-      --fill-mix: 34%;
-      --border-mix: 55%;
-      --shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
-      color-scheme: dark;
-    }
-  }
-
-  :root[data-theme="dark"] {
-    --paper: #211E24;
-    --paper-raised: #2B2730;
-    --paper-sunken: #191619;
-    --ink: #EDE6EA;
-    --ink-soft: #B0A5AC;
-    --ink-faint: #948A91;
-    --accent: #8ED3B8;
-    --accent-strong: #A8E3C8;
-    --accent-ink: #1E2A25;
-    --status-work: #8FB4DB;
-    --status-off: #A5CFB0;
-    --status-leave: #DCC98A;
-    --status-pending: #E8AE8A;
-    --stamp: #E8899E;
-    --stamp-strong: #F0A4B6;
-    --line: #3A343F;
-    --danger: #EE8FA4;
-    --fill-mix: 34%;
-    --border-mix: 55%;
-    --shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
-    color-scheme: dark;
-  }
-
-  :root[data-theme="light"] {
-    --paper: #FAF6F4;
-    --paper-raised: #FFFCFB;
-    --paper-sunken: #F1EAE7;
-    --ink: #3D3639;
-    --ink-soft: #6E6367;
-    --ink-faint: #786D73;
-    --accent: #9FD8C0;
-    --accent-strong: #31735F;
-    --accent-ink: #2C4A40;
-    --status-work: #A9C9E8;
-    --status-off: #BFE0C4;
-    --status-leave: #F0DFA0;
-    --status-pending: #F6C4A8;
-    --stamp: #E4849B;
-    --stamp-strong: #C25A75;
-    --line: #E8DFDC;
-    --danger: #C25A72;
-    --fill-mix: 72%;
-    --border-mix: 85%;
-    --shadow: 0 8px 24px rgba(122, 111, 115, 0.18);
     color-scheme: light;
   }
 
