@@ -26,6 +26,10 @@
     --status-pending: #F6C4A8;
     --stamp: #E4849B;
     --stamp-strong: #C25A75;
+    --stamp2: #B7B0E8;
+    --stamp2-strong: #5B4FA0;
+    --stamp3: #8FCFC7;
+    --stamp3-strong: #2C7A6F;
     --line: #E8DFDC;
     --danger: #C25A72;
     --fill-mix: 72%;
@@ -198,16 +202,20 @@
   .day-cell[data-status="off"] { background: color-mix(in srgb, var(--status-off) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-off) var(--border-mix), var(--line)); }
   .day-cell[data-status="leave"] { background: color-mix(in srgb, var(--status-leave) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-leave) var(--border-mix), var(--line)); }
   .day-cell[data-status="pending"] { background: color-mix(in srgb, var(--status-pending) var(--fill-mix), var(--paper-raised)); border: 1px dashed color-mix(in srgb, var(--status-pending) var(--border-mix), var(--ink-faint)); }
-  .stamp-badge {
+  .stamp-badges {
     position: absolute;
     top: -5px;
     right: -5px;
-    width: 18px;
-    height: 18px;
+    display: flex;
+    gap: 1px;
+  }
+  .stamp-badge {
+    width: 13px;
+    height: 13px;
     border-radius: 50%;
     background: var(--stamp);
     color: #fff;
-    font-size: 9px;
+    font-size: 7px;
     font-weight: 700;
     display: flex;
     align-items: center;
@@ -228,13 +236,14 @@
     margin: 0 auto;
     z-index: 20;
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     background: var(--paper);
     border-top: 1px solid var(--line);
   }
   .mode-btn {
-    flex: 1;
+    flex: 1 1 22%;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -498,8 +507,18 @@
     { key: "off", label: "公休", color: "--status-off" },
     { key: "leave", label: "有給", color: "--status-leave" },
     { key: "pending", label: "希望", color: "--status-pending" },
-    { key: "mark", label: "拠点", color: "--stamp", isStamp: true }
+    { key: "mark", label: "拠点", color: "--stamp", isStamp: true, field: "loadingMark" },
+    { key: "dayShift", label: "日勤", color: "--stamp2", isStamp: true, field: "dayShiftMark" },
+    { key: "safety", label: "安全会議", color: "--stamp3", isStamp: true, field: "safetyMark" }
   ];
+  function modeByKey(key) {
+    for (var i = 0; i < MODE_BUTTONS.length; i++) { if (MODE_BUTTONS[i].key === key) return MODE_BUTTONS[i]; }
+    return null;
+  }
+  function hasAnyMark(entry) {
+    if (!entry) return false;
+    return MODE_BUTTONS.some(function (m) { return m.isStamp && entry[m.field]; });
+  }
 
   function freshState(initialBalance) {
     return {
@@ -922,16 +941,20 @@
     var k = dkey(dt.y, dt.m, dt.d);
     var entry = state.days[k];
     var status = entry ? entry.status : null;
-    var mark = entry && entry.loadingMark;
     var isToday = k === TODAY_KEY;
-    var mismatch = mark && status !== "work";
     var red = isRedDate(dt.y, dt.m, dt.d);
     var cls = "day-cell" + (dim ? " dim" : "") + (isToday ? " today" : "") + (!status ? " unset" : "");
+    var badges = entry
+      ? MODE_BUTTONS.filter(function (m) { return m.isStamp && entry[m.field]; }).map(function (m) {
+          var mismatch = status !== "work";
+          return '<span class="stamp-badge' + (mismatch ? " mismatch" : "") + '" style="background:var(' + m.color + ')"></span>';
+        }).join("")
+      : "";
     return (
       '<button type="button" class="' + cls + '" data-action="tap-day" data-date="' + k + '"' +
       (status ? ' data-status="' + status + '"' : "") + ">" +
       '<span class="day-num digits' + (red ? " holiday" : "") + '">' + dt.d + "</span>" +
-      (mark ? '<span class="stamp-badge' + (mismatch ? " mismatch" : "") + '"></span>' : "") +
+      (badges ? '<span class="stamp-badges">' + badges + "</span>" : "") +
       "</button>"
     );
   }
@@ -949,16 +972,18 @@
     return '<div class="mode-toolbar">' + buttons + "</div>";
   }
 
-  function editLabel(k, prevEntry, nextEntry) {
+  function editLabel(k, prevEntry, nextEntry, mode) {
     var parts = k.split("-").map(Number);
     var md = parts[1] + "/" + parts[2];
     var prevStatus = prevEntry ? prevEntry.status : null;
     var nextStatus = nextEntry ? nextEntry.status : null;
-    if (nextStatus !== prevStatus) {
+    if (mode && !mode.isStamp) {
       return nextStatus ? md + "を" + STATUS_LABEL[nextStatus] + "に変更しました" : md + "を未入力に戻しました";
     }
-    var nextMark = nextEntry && nextEntry.loadingMark;
-    return nextMark ? md + "に積み込み印を付けました" : md + "の積み込み印を外しました";
+    var field = mode ? mode.field : "loadingMark";
+    var label = mode ? mode.label : "拠点";
+    var nextMark = nextEntry && nextEntry[field];
+    return nextMark ? md + "に" + label + "の印を付けました" : md + "の" + label + "の印を外しました";
   }
 
   function renderToast() {
@@ -1088,17 +1113,27 @@
         if (!ui.activeMode) break;
         var k = el.getAttribute("data-date");
         var prev = state.days[k] ? Object.assign({}, state.days[k]) : null;
-        var next;
-        if (ui.activeMode === "mark") {
-          next = { status: prev ? prev.status : null, loadingMark: !(prev && prev.loadingMark) };
+        var mode = modeByKey(ui.activeMode);
+        var next = Object.assign({}, prev || {});
+        if (mode.isStamp) {
+          next.status = prev ? prev.status : null;
+          next[mode.field] = !(prev && prev[mode.field]);
         } else {
           var curStatus = prev ? prev.status : null;
-          next = { status: curStatus === ui.activeMode ? null : ui.activeMode, loadingMark: !!(prev && prev.loadingMark) };
+          if (curStatus === ui.activeMode) {
+            // 2回目のタップ（解除）：このモードを適用する前の状態に戻す
+            next.status = (prev && prev.restoreStatus !== undefined) ? prev.restoreStatus : null;
+            delete next.restoreStatus;
+          } else {
+            // 1回目のタップ（適用）：戻り先として直前の状態を覚えておく
+            next.restoreStatus = curStatus;
+            next.status = ui.activeMode;
+          }
         }
-        var nextForStorage = (next.status || next.loadingMark) ? next : null;
+        var nextForStorage = (next.status || hasAnyMark(next)) ? next : null;
         if (nextForStorage) { state.days[k] = nextForStorage; } else { delete state.days[k]; }
         clearTimeout(toastTimer);
-        ui.lastEdit = { date: k, prevEntry: prev, label: editLabel(k, prev, nextForStorage) };
+        ui.lastEdit = { date: k, prevEntry: prev, label: editLabel(k, prev, nextForStorage, mode) };
         toastTimer = setTimeout(function () { ui.lastEdit = null; render(); }, 4000);
         render();
         break;
