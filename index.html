@@ -481,7 +481,9 @@
     return { startY: sy, startM: sm };
   }
   function fiscalYearOf(p) { return p.startM >= 4 ? p.startY : p.startY - 1; }
-  function periodLabel(p) { return p.startM + "月期"; }
+  // The company names a 16th-15th period after the month its 15th (closing day)
+  // falls in, not the month it opens in -- e.g. Feb16-Mar15 is "3月度", not "2月期".
+  function periodLabel(p) { return periodEnd(p).m + "月度"; }
   function periodRangeLabel(p) {
     var end = periodEnd(p);
     return p.startM + "/16–" + end.m + "/" + end.d;
@@ -987,7 +989,9 @@
     var years = [cur - 1, cur, cur + 1, cur + 2];
     if (ui.settingsFY === null) ui.settingsFY = cur;
     return years.map(function (y) {
-      return '<option value="' + y + '"' + (y === ui.settingsFY ? " selected" : "") + ">" + y + "年度（" + y + "/4月期～" + (y + 1) + "/3月期）</option>";
+      var firstEnd = periodEnd({ startY: y, startM: 4 });
+      var lastEnd = periodEnd({ startY: y + 1, startM: 3 });
+      return '<option value="' + y + '"' + (y === ui.settingsFY ? " selected" : "") + ">" + y + "年度（" + firstEnd.y + "/" + firstEnd.m + "月度〜" + lastEnd.y + "/" + lastEnd.m + "月度）</option>";
     }).join("");
   }
 
@@ -1002,7 +1006,7 @@
       var v = yObj[mk];
       var over = v !== undefined && v !== null && v !== "" && Number(v) > maxDays;
       return (
-        '<div class="quota-row"><div><div class="month-label">' + m + "月期</div>" +
+        '<div class="quota-row"><div><div class="month-label">' + periodLabel(pseudoP) + "</div>" +
         '<div class="month-range digits">' + range + "</div></div>" +
         '<div><input type="number" class="num-input" inputmode="numeric" min="0" max="31" ' +
         'data-action="set-quota" data-month="' + mk + '" value="' + (v === undefined || v === null ? "" : v) + '" style="width:64px;padding:6px;border-radius:4px;border:1px solid var(--line);background:var(--paper-raised);color:var(--ink);text-align:right" />' +
