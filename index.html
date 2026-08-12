@@ -371,7 +371,9 @@
   var SHEET_ID_KEY = "kaCalendar:sheetId";
   var TOKEN_KEY = "kaCalendar:token";
   var STATUS_LABEL = { work: "出勤", off: "公休", leave: "有給消化", pending: "休み希望" };
-  var MONTH_ORDER = ["4","5","6","7","8","9","10","11","12","1","2","3"];
+  // Ordered by startM, but a fiscal year's first period (labelled 4月度) is the one
+  // that CLOSES in April -- i.e. opens 3/16 -- so the year starts at startM 3, not 4.
+  var MONTH_ORDER = ["3","4","5","6","7","8","9","10","11","12","1","2"];
 
   /* ---------- pure date helpers (no Date-object arithmetic) ---------- */
   function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
@@ -480,7 +482,7 @@
     if (sm < 1) { sm = 12; sy -= 1; }
     return { startY: sy, startM: sm };
   }
-  function fiscalYearOf(p) { return p.startM >= 4 ? p.startY : p.startY - 1; }
+  function fiscalYearOf(p) { return p.startM >= 3 ? p.startY : p.startY - 1; }
   // The company names a 16th-15th period after the month its 15th (closing day)
   // falls in, not the month it opens in -- e.g. Feb16-Mar15 is "3月度", not "2月期".
   function periodLabel(p) { return periodEnd(p).m + "月度"; }
@@ -989,8 +991,8 @@
     var years = [cur - 1, cur, cur + 1, cur + 2];
     if (ui.settingsFY === null) ui.settingsFY = cur;
     return years.map(function (y) {
-      var firstEnd = periodEnd({ startY: y, startM: 4 });
-      var lastEnd = periodEnd({ startY: y + 1, startM: 3 });
+      var firstEnd = periodEnd({ startY: y, startM: 3 });
+      var lastEnd = periodEnd({ startY: y + 1, startM: 2 });
       return '<option value="' + y + '"' + (y === ui.settingsFY ? " selected" : "") + ">" + y + "年度（" + firstEnd.y + "/" + firstEnd.m + "月度〜" + lastEnd.y + "/" + lastEnd.m + "月度）</option>";
     }).join("");
   }
@@ -1000,7 +1002,7 @@
     var yObj = state.quotas[fy] || {};
     return MONTH_ORDER.map(function (mk) {
       var m = Number(mk);
-      var pseudoP = { startY: m >= 4 ? fy : fy + 1, startM: m };
+      var pseudoP = { startY: m >= 3 ? fy : fy + 1, startM: m };
       var range = periodRangeLabel(pseudoP);
       var maxDays = periodDates(pseudoP).length;
       var v = yObj[mk];
