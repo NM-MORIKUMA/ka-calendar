@@ -367,8 +367,6 @@
   var STORAGE_KEY = "kaCalendar:v1";
   var GOOGLE_CLIENT_ID = "715481185764-jhv00uu5vpsmfdhh090hj4fmd4t3aaq1.apps.googleusercontent.com";
   var GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-  var SHEET_NAME = "Ka Calendar Data";
-  var SHEET_ID_KEY = "kaCalendar:sheetId";
   var TOKEN_KEY = "kaCalendar:token";
   var STATUS_LABEL = { work: "出勤", off: "公休", leave: "有給消化", pending: "休み希望" };
   // Ordered by startM, but a fiscal year's first period (labelled 4月度) is the one
@@ -729,31 +727,16 @@
   function tokenValid() { return !!cloud.token && Date.now() < cloud.tokenExpiresAt - 30000; }
   function authHeaders() { return { "Authorization": "Bearer " + cloud.token, "Content-Type": "application/json" }; }
 
+  // A fixed, known-good spreadsheet ID -- not discovered dynamically. The original
+  // "search by name, create if not found" approach silently created a new duplicate
+  // spreadsheet on most fresh logins: drive.file grants don't reliably resurface a
+  // prior session's file through files.list, so PC and phone drifted onto different
+  // sheets and neither saw the other's edits. One canonical ID sidesteps that outright.
+  var FIXED_SHEET_ID = "1CL2zQH_vqVHFdRC2cm1IlD9nvB_o860grvUzifPs9oU";
+
   function findOrCreateSheet() {
-    var cached = localStorage.getItem(SHEET_ID_KEY);
-    var checkCached = cached
-      ? fetch("https://www.googleapis.com/drive/v3/files/" + cached + "?fields=id,trashed", { headers: authHeaders() })
-          .then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (meta) { return (meta && !meta.trashed) ? meta.id : null; })
-          .catch(function () { return null; })
-      : Promise.resolve(null);
-    return checkCached.then(function (id) {
-      if (id) return id;
-      var q = encodeURIComponent("name = '" + SHEET_NAME + "' and trashed = false and mimeType = 'application/vnd.google-apps.spreadsheet'");
-      return fetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&spaces=drive&fields=files(id)", { headers: authHeaders() })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.files && data.files.length) return data.files[0].id;
-          return fetch("https://sheets.googleapis.com/v4/spreadsheets", {
-            method: "POST", headers: authHeaders(),
-            body: JSON.stringify({ properties: { title: SHEET_NAME } })
-          }).then(function (r) { return r.json(); }).then(function (sheet) { return sheet.spreadsheetId; });
-        });
-    }).then(function (id) {
-      cloud.sheetId = id;
-      localStorage.setItem(SHEET_ID_KEY, id);
-      return id;
-    });
+    cloud.sheetId = FIXED_SHEET_ID;
+    return Promise.resolve(FIXED_SHEET_ID);
   }
 
   function pullFromCloud() {
