@@ -7,7 +7,7 @@
 <style>
   /* Macaron/pastel palette. Always light -- the app intentionally does not follow
      system dark mode (mixing these light pastels into a dark ground desaturated them
-     into mud and collapsed 有給/希望 into near-identical hues). --accent/--stamp are
+     into mud and collapsed adjacent status fills into near-identical hues). --accent/--stamp are
      the soft fill colors; the -strong variants are the darker, readable versions used
      for text and thin lines (leave-balance figure, sync badge, holiday dates). */
   :root {
@@ -21,9 +21,12 @@
     --accent-strong: #31735F;
     --accent-ink: #2C4A40;
     --status-work: #A9C9E8;
-    --status-off: #BFE0C4;
+    --status-rest: #F6D4D2;
+    --status-off: #E08787;
     --status-leave: #F0DFA0;
-    --status-pending: #F6C4A8;
+    /* 希望休 draws as an outline on top of a filled cell, so it needs a saturated tone --
+       the pastel used for the other modes disappears against a fill. */
+    --status-wish: #D9762F;
     --stamp: #E4849B;
     --stamp-strong: #C25A75;
     --stamp2: #B7B0E8;
@@ -199,9 +202,14 @@
   }
   .day-cell.today { box-shadow: 0 0 0 2px var(--accent-strong) inset; }
   .day-cell[data-status="work"] { background: color-mix(in srgb, var(--status-work) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-work) var(--border-mix), var(--line)); }
-  .day-cell[data-status="off"] { background: color-mix(in srgb, var(--status-off) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-off) var(--border-mix), var(--line)); }
+  .day-cell[data-status="rest"] { background: color-mix(in srgb, var(--status-rest) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-rest) var(--border-mix), var(--line)); }
   .day-cell[data-status="leave"] { background: color-mix(in srgb, var(--status-leave) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-leave) var(--border-mix), var(--line)); }
-  .day-cell[data-status="pending"] { background: color-mix(in srgb, var(--status-pending) var(--fill-mix), var(--paper-raised)); border: 1px dashed color-mix(in srgb, var(--status-pending) var(--border-mix), var(--ink-faint)); }
+  .day-cell[data-status="off"] { background: color-mix(in srgb, var(--status-off) var(--fill-mix), var(--paper-raised)); border-color: color-mix(in srgb, var(--status-off) var(--border-mix), var(--line)); }
+  /* 希望休 is a *request*, not an outcome -- it has to stay visible after the day's real
+     status (出勤/法休/...) is filled in, so it draws as an outline over whatever fill is
+     there rather than as its own background. outline (not border) keeps the grid from
+     shifting and coexists with .today's inset ring. */
+  .day-cell.wish { outline: 2px solid var(--status-wish); outline-offset: -1px; }
   .stamp-badges {
     position: absolute;
     top: -5px;
@@ -377,7 +385,7 @@
   var GOOGLE_CLIENT_ID = "715481185764-jhv00uu5vpsmfdhh090hj4fmd4t3aaq1.apps.googleusercontent.com";
   var GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
   var TOKEN_KEY = "kaCalendar:token";
-  var STATUS_LABEL = { work: "出勤", off: "公休", leave: "有給消化", pending: "休み希望" };
+  var STATUS_LABEL = { work: "出勤", rest: "休み", leave: "有給消化", off: "法休" };
   // Ordered by startM, but a fiscal year's first period (labelled 4月度) is the one
   // that CLOSES in April -- i.e. opens 3/16 -- so the year starts at startM 3, not 4.
   var MONTH_ORDER = ["3","4","5","6","7","8","9","10","11","12","1","2"];
@@ -502,14 +510,18 @@
   var state = null;
   var ui = { activeMode: null, lastEdit: null, settingsOpen: false, settingsFY: null, viewPeriod: periodOf(TODAY.y, TODAY.m, TODAY.d) };
   var toastTimer = null;
+  // Array order drives the toolbar order: the first four are exclusive statuses (top row),
+  // the rest are marks that stack on top of a status (bottom row). 希望休 is a mark rather
+  // than a status because it records a request made *before* the day's outcome is known.
   var MODE_BUTTONS = [
     { key: "work", label: "出勤", color: "--status-work" },
-    { key: "off", label: "公休", color: "--status-off" },
+    { key: "rest", label: "休み", color: "--status-rest" },
     { key: "leave", label: "有給", color: "--status-leave" },
-    { key: "pending", label: "希望", color: "--status-pending" },
+    { key: "off", label: "法休", color: "--status-off" },
     { key: "mark", label: "拠点", color: "--stamp", isStamp: true, field: "loadingMark" },
     { key: "dayShift", label: "日勤", color: "--stamp2", isStamp: true, field: "dayShiftMark" },
-    { key: "safety", label: "安全会議", color: "--stamp3", isStamp: true, field: "safetyMark" }
+    { key: "safety", label: "安全会議", color: "--stamp3", isStamp: true, field: "safetyMark" },
+    { key: "wish", label: "希望休", color: "--status-wish", isStamp: true, field: "wishMark", isRing: true }
   ];
   function modeByKey(key) {
     for (var i = 0; i < MODE_BUTTONS.length; i++) { if (MODE_BUTTONS[i].key === key) return MODE_BUTTONS[i]; }
@@ -533,13 +545,30 @@
     };
   }
 
+  // 希望休 used to be an exclusive status ("pending"); it is now a mark that coexists with
+  // whatever the day turned out to be. Days saved under the old scheme would otherwise be
+  // unreachable -- neither rendered nor editable -- so convert them on the way in. Runs on
+  // every load (local, cloud, imported file) and is idempotent, which is why the stored
+  // version number stays at 1.
+  function migrateState(s) {
+    if (!s || typeof s.days !== "object") return s;
+    Object.keys(s.days).forEach(function (k) {
+      var e = s.days[k];
+      if (!e) { delete s.days[k]; return; }
+      if (e.status === "pending") { e.status = null; e.wishMark = true; }
+      if (e.restoreStatus === "pending") { e.restoreStatus = null; }
+      if (!e.status && !hasAnyMark(e)) delete s.days[k];
+    });
+    return s;
+  }
+
   function load() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return null;
       var parsed = JSON.parse(raw);
       if (!parsed || parsed.version !== 1) return null;
-      return parsed;
+      return migrateState(parsed);
     } catch (e) { return null; }
   }
   function persist() {
@@ -779,7 +808,7 @@
         try {
           var parsed = JSON.parse(raw);
           if (parsed && parsed.version === 1 && typeof parsed.days === "object") {
-            state = parsed;
+            state = migrateState(parsed);
             ui.activeMode = null;
           }
         } catch (e) { /* keep local state if the cloud value is unreadable */ }
@@ -943,9 +972,10 @@
     var status = entry ? entry.status : null;
     var isToday = k === TODAY_KEY;
     var red = isRedDate(dt.y, dt.m, dt.d);
-    var cls = "day-cell" + (dim ? " dim" : "") + (isToday ? " today" : "") + (!status ? " unset" : "");
+    var wish = !!(entry && entry.wishMark);
+    var cls = "day-cell" + (dim ? " dim" : "") + (isToday ? " today" : "") + (!status ? " unset" : "") + (wish ? " wish" : "");
     var badges = entry
-      ? MODE_BUTTONS.filter(function (m) { return m.isStamp && entry[m.field]; }).map(function (m) {
+      ? MODE_BUTTONS.filter(function (m) { return m.isStamp && !m.isRing && entry[m.field]; }).map(function (m) {
           var mismatch = status !== "work";
           return '<span class="stamp-badge' + (mismatch ? " mismatch" : "") + '" style="background:var(' + m.color + ')"></span>';
         }).join("")
@@ -962,7 +992,12 @@
   function renderToolbar() {
     var buttons = MODE_BUTTONS.map(function (m) {
       var pressed = ui.activeMode === m.key;
-      var icon = '<span class="mode-swatch"' + (m.isStamp ? ' style="border-radius:50%"' : "") + "></span>";
+      // The swatch previews how the mode actually draws on a day: a square for a status
+      // fill, a dot for a badge, a hollow ring for 希望休's outline.
+      var swatchStyle = m.isRing
+        ? ' style="background:transparent;border:2px solid var(--mode-color)"'
+        : (m.isStamp ? ' style="border-radius:50%"' : "");
+      var icon = '<span class="mode-swatch"' + swatchStyle + "></span>";
       return (
         '<button type="button" class="mode-btn" data-action="toggle-mode" data-mode="' + m.key + '" ' +
         'aria-pressed="' + pressed + '" style="--mode-color: var(' + m.color + ')">' +
@@ -1070,7 +1105,9 @@
       "</div>" +
       '<div class="btn-row"><button type="button" class="btn primary" data-action="do-backup">バックアップを保存</button>' +
       '<button type="button" class="btn" data-action="do-import">復元する</button></div>' +
-      '<input type="file" id="import-file" accept="application/json" />' +
+      // data-action is what bindEvents scans for; without it this input gets no change
+      // listener at all and picking a backup file silently does nothing.
+      '<input type="file" id="import-file" data-action="import-file" accept="application/json" />' +
       '<div class="help-text">復元(読み込み)を実行すると、現在のデータはすべて上書きされます。</div>' +
       "</div>" +
 
@@ -1197,7 +1234,7 @@
           window.alert("ファイル形式が正しくありません。");
           return;
         }
-        state = parsed;
+        state = migrateState(parsed);
         ui.activeMode = null;
         ui.lastEdit = null;
         ui.settingsFY = fiscalYearOf(ui.viewPeriod);
