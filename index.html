@@ -700,8 +700,14 @@
 
   /* ---------- rendering ---------- */
   /* ---------- cloud sync (Google Sheets via client-side OAuth, no server) ---------- */
-  var cloud = { token: null, tokenExpiresAt: 0, sheetId: null, tokenClient: null, status: "signedout", lastSilentResult: "未実行" };
+  var cloud = { token: null, tokenExpiresAt: 0, sheetId: null, tokenClient: null, status: "signedout", lastSilentResult: "未実行", pulled: false };
   // status: "signedout" | "connecting" | "synced" | "error"
+  // pulled: has a cloud pull finished (success or failure) since the current token was
+  // obtained? Every place that stores a fresh token calls render() before pullFromCloud()
+  // resolves, and render() always tries to push -- without this gate, that first render
+  // would push the device's stale pre-pull local state, and if it lands before the pull
+  // finishes, it overwrites whatever another device had saved. pushToCloud() checks this
+  // flag; pullFromCloud() sets it true on every terminal branch once it's done.
 
   function cloudReady() { return !!(window.google && window.google.accounts && window.google.accounts.oauth2); }
 
@@ -747,6 +753,7 @@
         if (resp.error) { cloud.status = "error"; render(); return; }
         storeToken(resp.access_token, Date.now() + (Number(resp.expires_in) || 3300) * 1000);
         cloud.status = "connecting";
+        cloud.pulled = false;
         render();
         pullFromCloud();
       }
@@ -790,6 +797,7 @@
       if (!token) { renderSyncBadgeOnly(); return; }
       storeToken(token, Date.now() + (Number(expiresIn) || 3300) * 1000);
       cloud.status = "connecting";
+      cloud.pulled = false;
       render();
       pullFromCloud();
     }
@@ -847,6 +855,7 @@
         clearStoredToken();
         cloud.status = "signedout";
         cloud.lastSilentResult = "保存済み認証が失効(再ログインが必要)";
+        cloud.pulled = true;
         render();
         return null;
       }
@@ -863,17 +872,19 @@
           }
         } catch (e) { /* keep local state if the cloud value is unreadable */ }
         cloud.status = "synced";
+        cloud.pulled = true;
         render();
       } else {
         cloud.status = "synced";
+        cloud.pulled = true;
         render();
       }
-    }).catch(function () { cloud.status = "error"; render(); });
+    }).catch(function () { cloud.status = "error"; cloud.pulled = true; render(); });
   }
 
   var pushTimer = null;
   function pushToCloud() {
-    if (!tokenValid()) return;
+    if (!tokenValid() || !cloud.pulled) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(pushToCloudNow, 600);
   }
