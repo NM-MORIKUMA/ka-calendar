@@ -29,10 +29,10 @@
     --status-wish: #D9762F;
     --stamp: #E4849B;
     --stamp-strong: #C25A75;
-    --stamp2: #B7B0E8;
-    --stamp2-strong: #5B4FA0;
-    --stamp3: #8FCFC7;
-    --stamp3-strong: #2C7A6F;
+    --stamp2: #8A6FD1;
+    --stamp2-strong: #5439A6;
+    --stamp3: #4FAE6E;
+    --stamp3-strong: #2C7A4A;
     --line: #E8DFDC;
     --danger: #C25A72;
     --fill-mix: 72%;
@@ -210,7 +210,7 @@
   .day-memo {
     font-size: 9px;
     line-height: 1.2;
-    color: var(--ink-soft);
+    color: var(--ink);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -683,6 +683,21 @@
     return count;
   }
 
+  // A period that has never been touched (no day in it has any entry, past or future)
+  // gets pre-filled on first view: weekdays as 出勤, weekends/holidays as 休み. Bails
+  // immediately once any day exists, so it never overwrites real data -- safe to call on
+  // every render rather than threading a one-time trigger through each nav path.
+  function ensurePeriodDefaults(p) {
+    var dates = periodDates(p);
+    var touched = dates.some(function (dt) { return !!state.days[dkey(dt.y, dt.m, dt.d)]; });
+    if (touched) return;
+    dates.forEach(function (dt) {
+      var dow = dayOfWeek(dt.y, dt.m, dt.d);
+      var isRestDay = dow === 0 || dow === 6 || isHoliday(dt.y, dt.m, dt.d);
+      state.days[dkey(dt.y, dt.m, dt.d)] = { status: isRestDay ? "rest" : "work" };
+    });
+  }
+
   /* ---------- rendering ---------- */
   /* ---------- cloud sync (Google Sheets via client-side OAuth, no server) ---------- */
   var cloud = { token: null, tokenExpiresAt: 0, sheetId: null, tokenClient: null, status: "signedout", lastSilentResult: "未実行" };
@@ -884,6 +899,7 @@
   function render() {
     if (!state) { renderOnboarding(); return; }
     reconcileGrants();
+    ensurePeriodDefaults(ui.viewPeriod);
     persist();
     pushToCloud();
     var savedScroll = window.scrollY;
@@ -972,11 +988,11 @@
     }
     return (
       '<div class="dashboard">' +
-      '<div class="stat-card"><div class="stat-label">有給残日数</div>' +
-      '<div class="stat-panel"><div class="stat-value digits">' + balance + '<span class="unit">日</span></div></div></div>' +
       '<div class="stat-card"><div class="stat-label">当期実績 / 所定</div>' +
       '<div class="stat-panel"><div class="stat-value digits" style="font-size:16px">' + worked + (quota !== null ? " / " + quota : "") + "</div></div>" +
       '<div class="stat-sub">' + subHtml + "</div></div>" +
+      '<div class="stat-card"><div class="stat-label">有給残日数</div>' +
+      '<div class="stat-panel"><div class="stat-value digits">' + balance + '<span class="unit">日</span></div></div></div>' +
       "</div>"
     );
   }
