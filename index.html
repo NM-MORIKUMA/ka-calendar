@@ -399,14 +399,10 @@
 <body>
 
 <div id="app"></div>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 (function () {
   "use strict";
   var STORAGE_KEY = "kaCalendar:v1";
-  var GOOGLE_CLIENT_ID = "715481185764-jhv00uu5vpsmfdhh090hj4fmd4t3aaq1.apps.googleusercontent.com";
-  var GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-  var TOKEN_KEY = "kaCalendar:token";
   var STATUS_LABEL = { work: "出勤", rest: "休み", leave: "有給消化", off: "法休" };
   // Ordered by startM, but a fiscal year's first period (labelled 4月度) is the one
   // that CLOSES in April -- i.e. opens 3/16 -- so the year starts at startM 3, not 4.
@@ -699,203 +695,117 @@
   }
 
   /* ---------- rendering ---------- */
-  /* ---------- cloud sync (Google Sheets via client-side OAuth, no server) ---------- */
-  var cloud = { token: null, tokenExpiresAt: 0, sheetId: null, tokenClient: null, status: "signedout", lastSilentResult: "未実行", pulled: false };
-  // status: "signedout" | "connecting" | "synced" | "error"
-  // pulled: has a cloud pull finished (success or failure) since the current token was
-  // obtained? Every place that stores a fresh token calls render() before pullFromCloud()
-  // resolves, and render() always tries to push -- without this gate, that first render
-  // would push the device's stale pre-pull local state, and if it lands before the pull
-  // finishes, it overwrites whatever another device had saved. pushToCloud() checks this
-  // flag; pullFromCloud() sets it true on every terminal branch once it's done.
+  /* ---------- cloud sync (GAS Webアプリ経由・合言葉方式。Googleログイン不要) ---------- */
+  var GAS_URL = "https://script.google.com/macros/s/AKfycbxVOa7VSzQeIRc4qPGgu8MP9GNxOuEVmJKX_G4uc5Yhg36L_XbPqXRY6DTJpEs8z8w1zw/exec";
+  var PASS_KEY = "kaCalendar:pass";
+  var cloud = { pass: null, rev: 0, status: "signedout", lastResult: "未実行", pulled: false, lastPullAt: 0, lastJson: null };
+  // status: "signedout"(合言葉なし/違う) | "connecting" | "synced" | "error"
+  // pulled: 現在の接続でクラウドの読み込みが終わったか。終わるまで書き込みを止める
+  // (読み込み前の古いローカル状態で、他端末の最新データを上書きしないため)。
+  // rev: 最後に読み込んだクラウド側の版番号。書き込み時に添えて、他端末が先に更新していたら
+  // サーバーが拒否する(上書き事故の防止)。
 
-  function cloudReady() { return !!(window.google && window.google.accounts && window.google.accounts.oauth2); }
-
-  // Android Chrome blocks the hidden-iframe silent re-auth outright (Google answers
-  // interaction_required), so the access token is cached locally and reused until it
-  // expires. Google caps these at ~1h, so this removes the re-tap only for reasonably
-  // prompt return visits -- after that the badge falls back to a manual tap.
-  function storeToken(token, expiresAt) {
-    cloud.token = token;
-    cloud.tokenExpiresAt = expiresAt;
-    try {
-      localStorage.setItem(TOKEN_KEY, JSON.stringify({ token: token, expiresAt: expiresAt }));
-    } catch (e) { /* private mode / quota -- session-only auth is an acceptable fallback */ }
+  function loadPass() {
+    try { cloud.pass = localStorage.getItem(PASS_KEY) || null; } catch (e) { cloud.pass = null; }
+    return !!cloud.pass;
+  }
+  function savePass(p) {
+    cloud.pass = p;
+    try { localStorage.setItem(PASS_KEY, p); } catch (e) {}
+  }
+  function clearPass() {
+    cloud.pass = null;
+    try { localStorage.removeItem(PASS_KEY); } catch (e) {}
   }
 
-  function clearStoredToken() {
-    cloud.token = null;
-    cloud.tokenExpiresAt = 0;
-    try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
-  }
-
-  function restoreStoredToken() {
-    var raw;
-    try { raw = localStorage.getItem(TOKEN_KEY); } catch (e) { return false; }
-    if (!raw) return false;
-    try {
-      var saved = JSON.parse(raw);
-      if (!saved || !saved.token || Date.now() >= saved.expiresAt - 60000) { clearStoredToken(); return false; }
-      cloud.token = saved.token;
-      cloud.tokenExpiresAt = saved.expiresAt;
-      return true;
-    } catch (e) { clearStoredToken(); return false; }
-  }
-
-  function ensureTokenClient() {
-    if (cloud.tokenClient) return cloud.tokenClient;
-    cloud.tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: GOOGLE_SCOPE,
-      callback: function (resp) {
-        // Only the explicit (button-tap) login path reaches this callback; the
-        // page-load path goes through attemptSilentReconnect instead.
-        if (resp.error) { cloud.status = "error"; render(); return; }
-        storeToken(resp.access_token, Date.now() + (Number(resp.expires_in) || 3300) * 1000);
-        cloud.status = "connecting";
-        cloud.pulled = false;
-        render();
-        pullFromCloud();
-      }
-    });
-    return cloud.tokenClient;
+  // Content-Typeをtext/plainにして、ブラウザの事前確認(プリフライト)を避ける。
+  function gasCall(payload) {
+    payload.pass = cloud.pass;
+    return fetch(GAS_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) })
+      .then(function (r) { return r.json(); });
   }
 
   function cloudLogin() {
-    if (!cloudReady()) { window.alert("Googleログインの準備ができていません。少し待ってからもう一度お試しください。"); return; }
-    ensureTokenClient().requestAccessToken({ prompt: "consent" });
+    var p = window.prompt("合言葉を入力してください(最初の1回だけです)");
+    if (!p) return;
+    savePass(p.trim());
+    cloud.status = "connecting";
+    cloud.pulled = false;
+    render();
+    pullFromCloud();
   }
 
-  // Silent re-auth via a hidden iframe. GIS's own requestAccessToken always opens a
-  // popup, which the browser blocks when it isn't triggered by a user gesture -- so on
-  // page load we drive the OAuth endpoint ourselves with prompt=none inside an iframe.
-  // Google either redirects straight back with a token (already-granted consent) or
-  // errors out, and either way nothing visible happens.
-  function attemptSilentReconnect() {
-    var redirectUri = location.origin + location.pathname;
-    var params = [
-      "client_id=" + encodeURIComponent(GOOGLE_CLIENT_ID),
-      "redirect_uri=" + encodeURIComponent(redirectUri),
-      "response_type=token",
-      "scope=" + encodeURIComponent(GOOGLE_SCOPE),
-      "prompt=none"
-    ].join("&");
-
-    var frame = document.createElement("iframe");
-    frame.style.display = "none";
-    frame.src = "https://accounts.google.com/o/oauth2/v2/auth?" + params;
-
-    var settled = false;
-    function cleanup() {
-      if (frame.parentNode) frame.parentNode.removeChild(frame);
-    }
-    function finish(token, expiresIn, reason) {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      cloud.lastSilentResult = reason || (token ? "ok" : "unknown");
-      if (!token) { renderSyncBadgeOnly(); return; }
-      storeToken(token, Date.now() + (Number(expiresIn) || 3300) * 1000);
-      cloud.status = "connecting";
-      cloud.pulled = false;
-      render();
-      pullFromCloud();
-    }
-
-    frame.addEventListener("load", function () {
-      var loc;
-      try {
-        // Same-origin only once Google has redirected back to us; while still on
-        // accounts.google.com this throws, which just means "not done yet".
-        loc = frame.contentWindow.location;
-        var probe = loc.hash;
-      } catch (e) { return; }
-      var raw = (loc.hash || loc.search || "").replace(/^[#?]/, "");
-      if (!raw) { finish(null, null, "空の応答"); return; }
-      var parsed = new URLSearchParams(raw);
-      var token = parsed.get("access_token");
-      if (token) { finish(token, parsed.get("expires_in"), "ok"); return; }
-      finish(null, null, parsed.get("error") || "不明な応答");
-    });
-
-    document.body.appendChild(frame);
-    setTimeout(function () { finish(null, null, "タイムアウト(ブラウザがブロックした可能性)"); }, 8000);
-  }
-
-  function cloudLogout() {
-    if (cloud.token && cloudReady()) { google.accounts.oauth2.revoke(cloud.token, function () {}); }
-    clearStoredToken();
+  function handleAuthFail(reason) {
+    clearPass();
     cloud.status = "signedout";
-    cloud.lastSilentResult = "ログアウト済み";
+    cloud.lastResult = reason;
+    cloud.pulled = true;
     render();
   }
 
-  function tokenValid() { return !!cloud.token && Date.now() < cloud.tokenExpiresAt - 30000; }
-  function authHeaders() { return { "Authorization": "Bearer " + cloud.token, "Content-Type": "application/json" }; }
-
-  // A fixed, known-good spreadsheet ID -- not discovered dynamically. The original
-  // "search by name, create if not found" approach silently created a new duplicate
-  // spreadsheet on most fresh logins: drive.file grants don't reliably resurface a
-  // prior session's file through files.list, so PC and phone drifted onto different
-  // sheets and neither saw the other's edits. One canonical ID sidesteps that outright.
-  var FIXED_SHEET_ID = "1CL2zQH_vqVHFdRC2cm1IlD9nvB_o860grvUzifPs9oU";
-
-  function findOrCreateSheet() {
-    cloud.sheetId = FIXED_SHEET_ID;
-    return Promise.resolve(FIXED_SHEET_ID);
-  }
-
   function pullFromCloud() {
-    findOrCreateSheet().then(function (id) {
-      return fetch("https://sheets.googleapis.com/v4/spreadsheets/" + id + "/values/A1?valueRenderOption=UNFORMATTED_VALUE", { headers: authHeaders() });
-    }).then(function (r) {
-      // A cached token can be revoked or expired server-side; drop it and show the
-      // plain "tap to sign in" state rather than a dead-end error.
-      if (r.status === 401 || r.status === 403) {
-        clearStoredToken();
-        cloud.status = "signedout";
-        cloud.lastSilentResult = "保存済み認証が失効(再ログインが必要)";
-        cloud.pulled = true;
-        render();
-        return null;
+    if (!cloud.pass) return;
+    gasCall({ action: "get" }).then(function (res) {
+      if (!res.ok) {
+        if (res.error === "auth") { handleAuthFail("合言葉が違います"); return; }
+        if (res.error === "locked") { cloud.status = "error"; cloud.lastResult = "合言葉の間違いが多すぎるため一時停止中(10分後に再試行)"; cloud.pulled = true; render(); return; }
+        cloud.status = "error"; cloud.lastResult = "サーバーの応答エラー(" + res.error + ")"; cloud.pulled = true; render(); return;
       }
-      return r.json();
-    }).then(function (data) {
-      if (!data) return;
-      var raw = data.values && data.values[0] && data.values[0][0];
-      if (raw) {
+      cloud.rev = res.rev;
+      cloud.lastPullAt = Date.now();
+      cloud.lastJson = res.state || null;
+      if (res.state) {
         try {
-          var parsed = JSON.parse(raw);
+          var parsed = JSON.parse(res.state);
           if (parsed && parsed.version === 1 && typeof parsed.days === "object") {
             state = migrateState(parsed);
             ui.activeMode = null;
           }
-        } catch (e) { /* keep local state if the cloud value is unreadable */ }
-        cloud.status = "synced";
-        cloud.pulled = true;
-        render();
-      } else {
-        cloud.status = "synced";
-        cloud.pulled = true;
-        render();
+        } catch (e) { /* クラウドの値が読めないときはローカルを維持 */ }
       }
-    }).catch(function () { cloud.status = "error"; cloud.pulled = true; render(); });
+      cloud.status = "synced";
+      cloud.lastResult = "読み込み成功";
+      cloud.pulled = true;
+      render();
+    }).catch(function () {
+      cloud.status = "error"; cloud.lastResult = "通信できませんでした"; cloud.pulled = true; render();
+    });
   }
 
   var pushTimer = null;
   function pushToCloud() {
-    if (!tokenValid() || !cloud.pulled) return;
+    if (!cloud.pass || !cloud.pulled || cloud.status === "signedout") return;
+    if (state && JSON.stringify(state) === cloud.lastJson) return; // 変更なしなら送らない
     clearTimeout(pushTimer);
     pushTimer = setTimeout(pushToCloudNow, 600);
   }
   function pushToCloudNow() {
-    if (!tokenValid() || !cloud.sheetId) return;
-    fetch("https://sheets.googleapis.com/v4/spreadsheets/" + cloud.sheetId + "/values/A1?valueInputOption=RAW", {
-      method: "PUT", headers: authHeaders(), body: JSON.stringify({ values: [[JSON.stringify(state)]] })
-    }).then(function (r) {
-      cloud.status = r.ok ? "synced" : "error";
+    pushTimer = null;
+    if (!cloud.pass || !cloud.pulled || !state) return;
+    var sent = JSON.stringify(state);
+    gasCall({ action: "put", baseRev: cloud.rev, state: sent }).then(function (res) {
+      if (res.ok) {
+        cloud.rev = res.rev;
+        cloud.lastJson = sent;
+        cloud.status = "synced";
+        cloud.lastResult = "保存成功";
+      } else if (res.error === "conflict") {
+        // 他の端末が先に更新していた。最新を読み込み直す(自分の未保存分は上書きされる)
+        cloud.status = "connecting";
+        cloud.lastResult = "他の端末で更新されていたため最新を読み込みました";
+        cloud.pulled = false;
+        renderSyncBadgeOnly();
+        pullFromCloud();
+        return;
+      } else if (res.error === "auth") {
+        handleAuthFail("合言葉が違います");
+        return;
+      } else {
+        cloud.status = "error";
+        cloud.lastResult = "保存に失敗(" + res.error + ")";
+      }
       renderSyncBadgeOnly();
-    }).catch(function () { cloud.status = "error"; renderSyncBadgeOnly(); });
+    }).catch(function () { cloud.status = "error"; cloud.lastResult = "通信できませんでした"; renderSyncBadgeOnly(); });
   }
   function renderSyncBadgeOnly() {
     var el = document.getElementById("sync-badge");
@@ -904,6 +814,15 @@
     var fresh = document.getElementById("sync-badge");
     if (fresh) fresh.addEventListener("click", function (ev) { handleAction(fresh.getAttribute("data-action"), fresh, ev); });
   }
+
+  // 他の端末の更新を拾う: 画面に戻ってきたとき、30秒以上経っていれば読み込み直す
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState !== "visible") return;
+    if (!cloud.pass || cloud.status === "signedout" || pushTimer) return;
+    if (Date.now() - cloud.lastPullAt < 30000) return;
+    cloud.pulled = false;
+    pullFromCloud();
+  });
 
   var APP = document.getElementById("app");
 
@@ -970,10 +889,10 @@
 
   function renderSyncBadge() {
     var label, action, title;
-    if (cloud.status === "signedout") { label = "🔒"; action = "cloud-login"; title = "Googleでログインして同期"; }
+    if (cloud.status === "signedout") { label = "🔑"; action = "cloud-login"; title = "合言葉を入力して同期"; }
     else if (cloud.status === "connecting") { label = "…"; action = "cloud-noop"; title = "同期中"; }
-    else if (cloud.status === "synced") { label = "☁"; action = "cloud-logout"; title = "同期ON(タップでログアウト)"; }
-    else { label = "⚠"; action = "cloud-login"; title = "同期エラー(タップで再ログイン)"; }
+    else if (cloud.status === "synced") { label = "☁"; action = "cloud-sync"; title = "同期ON(タップで最新を読み込み)"; }
+    else { label = "⚠"; action = "cloud-sync"; title = "同期エラー(タップで再試行)"; }
     return (
       '<button type="button" id="sync-badge" class="icon-btn sync-badge sync-' + cloud.status + '" ' +
       'data-action="' + action + '" aria-label="' + title + '" title="' + title + '">' + label + "</button>"
@@ -1216,7 +1135,7 @@
       "</div>" +
 
       '<div class="settings-section"><h2>同期の状態</h2>' +
-      '<div class="help-text">状態: ' + cloud.status + "<br />自動ログインの結果: " + cloud.lastSilentResult + "</div>" +
+      '<div class="help-text">状態: ' + cloud.status + "<br />結果: " + cloud.lastResult + "</div>" +
       "</div>" +
       "</div>"
     );
@@ -1336,7 +1255,7 @@
       case "do-backup": doBackup(); break;
       case "do-import": document.getElementById("import-file").click(); break;
       case "cloud-login": cloudLogin(); break;
-      case "cloud-logout": cloudLogout(); break;
+      case "cloud-sync": cloud.status = "connecting"; cloud.pulled = false; render(); pullFromCloud(); break;
       case "cloud-noop": break;
     }
   }
@@ -1382,14 +1301,13 @@
 
   /* ---------- boot ---------- */
   state = load();
-  if (restoreStoredToken()) {
+  if (loadPass()) {
     cloud.status = "connecting";
-    cloud.lastSilentResult = "保存済みの認証を再利用";
+    cloud.lastResult = "読み込み中";
     render();
     pullFromCloud();
   } else {
     render();
-    attemptSilentReconnect();
   }
 })();
 </script>
