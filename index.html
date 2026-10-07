@@ -157,9 +157,9 @@
   .stat-sub .diff-minus { color: var(--danger); font-weight: 700; }
 
   /* ---------- Grid ---------- */
-  /* Bottom padding clears the fixed toolbar, which is three rows tall (statuses / marks /
-     メモ) -- keep these in step if a row is ever added or removed. */
-  .grid-wrap { overflow-x: auto; padding: 0 12px calc(166px + env(safe-area-inset-bottom)); }
+  /* Bottom padding clears the fixed toolbar, which is two rows tall (statuses / marks)
+     -- keep these in step if a row is ever added or removed. */
+  .grid-wrap { overflow-x: auto; padding: 0 12px calc(122px + env(safe-area-inset-bottom)); }
   .weekday-row, .day-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(38px, 1fr));
@@ -540,8 +540,8 @@
     { key: "mark", label: "拠点", color: "--stamp", isStamp: true, field: "loadingMark" },
     { key: "dayShift", label: "日勤", color: "--stamp2", isStamp: true, field: "dayShiftMark" },
     { key: "safety", label: "安全会議", color: "--stamp3", isStamp: true, field: "safetyMark", square: true },
-    { key: "wish", label: "希望休", color: "--status-wish", isStamp: true, field: "wishMark", isRing: true },
-    { key: "memo", label: "メモ", color: "--ink-faint", isMemo: true }
+    { key: "wish", label: "希望休", color: "--status-wish", isStamp: true, field: "wishMark", isRing: true }
+    // メモ用のボタンは廃止(2026-10-07)。何のボタンも選ばずに日付をタップすれば、メモ入力が開く。
   ];
   function modeByKey(key) {
     for (var i = 0; i < MODE_BUTTONS.length; i++) { if (MODE_BUTTONS[i].key === key) return MODE_BUTTONS[i]; }
