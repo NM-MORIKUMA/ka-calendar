@@ -527,7 +527,7 @@
 
   /* ---------- state ---------- */
   var state = null;
-  var ui = { activeMode: null, lastEdit: null, settingsOpen: false, settingsFY: null, viewPeriod: periodOf(TODAY.y, TODAY.m, TODAY.d), memoDate: null };
+  var ui = { activeMode: null, lastEdit: null, settingsOpen: false, settingsFY: null, viewPeriod: periodOf(TODAY.y, TODAY.m, TODAY.d), memoDate: null, memoConfirm: false, memoDraft: null };
   var toastTimer = null;
   // Array order drives the toolbar order: the first four are exclusive statuses (top row),
   // the rest are marks that stack on top of a status (bottom row). 希望休 is a mark rather
@@ -1044,12 +1044,26 @@
   }
 
   function renderMemoDialog() {
-    if (!ui.memoDate) return "";
+    if (!ui.memoDate) { ui.memoConfirm = false; ui.memoDraft = null; return ""; }
     var k = ui.memoDate;
     var parts = k.split("-").map(Number);
     var entry = state.days[k];
     var cur = entry && entry.memo ? entry.memo : "";
+    if (ui.memoDraft !== null) cur = ui.memoDraft;
     var dow = ["日","月","火","水","木","金","土"][dayOfWeek(parts[0], parts[1], parts[2])];
+    // 「消す」を押したときの確認画面(間違えて消さないための、もう一段階)
+    if (ui.memoConfirm) {
+      return (
+        '<div class="onboard-overlay"><div class="onboard-card memo-card">' +
+        "<h1>" + parts[1] + "月" + parts[2] + "日のメモを消しますか?</h1>" +
+        '<p class="memo-sub">消したメモは元に戻せません(直後の数秒間だけ「元に戻す」が出ます)。</p>' +
+        '<div class="help-text" style="font-weight:700;color:var(--ink)">「' + esc(entry && entry.memo ? entry.memo : cur) + '」</div>' +
+        '<div class="btn-row">' +
+        '<button type="button" class="btn primary" data-action="memo-clear-no">やめる(消さない)</button>' +
+        '<button type="button" class="btn" data-action="memo-clear-yes">消す</button>' +
+        "</div></div></div>"
+      );
+    }
     return (
       '<div class="onboard-overlay" data-action="memo-backdrop"><div class="onboard-card memo-card">' +
       "<h1>" + parts[1] + "月" + parts[2] + "日（" + dow + "）のメモ</h1>" +
@@ -1226,12 +1240,30 @@
       // too, and without this check typing in the field would close the dialog.
       case "memo-backdrop": if (ev && ev.target !== el) break; ui.memoDate = null; render(); break;
       case "memo-cancel": ui.memoDate = null; render(); break;
-      case "memo-save":
       case "memo-clear": {
+        // 保存済みのメモがあるときだけ、確認画面をはさむ(誤タップで一瞬で消えるのを防ぐ)
+        var ck = ui.memoDate;
+        if (!ck) break;
+        var cEntry = state.days[ck];
+        if (cEntry && cEntry.memo) {
+          var cInput = document.getElementById("memo-input");
+          ui.memoDraft = cInput ? cInput.value : null;
+          ui.memoConfirm = true;
+          render();
+          break;
+        }
+        // 保存済みのメモがなければ、そのまま下の処理(何も消えない)へ
+      }
+      // falls through
+      case "memo-clear-no":
+        if (action === "memo-clear-no") { ui.memoConfirm = false; render(); break; }
+      // falls through
+      case "memo-save":
+      case "memo-clear-yes": {
         var mk = ui.memoDate;
         if (!mk) break;
         var input = document.getElementById("memo-input");
-        var text = action === "memo-clear" ? "" : (input ? input.value.trim() : "");
+        var text = (action === "memo-clear" || action === "memo-clear-yes") ? "" : (input ? input.value.trim() : "");
         var mPrev = state.days[mk] ? Object.assign({}, state.days[mk]) : null;
         var mNext = Object.assign({}, mPrev || {});
         if (text) { mNext.memo = text; } else { delete mNext.memo; }
