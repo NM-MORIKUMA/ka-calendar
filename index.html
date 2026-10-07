@@ -774,22 +774,33 @@
   }
 
   var pushTimer = null;
+  // 送信は同時に1つだけ。保存中にさらに変更があれば、終わってから最新を送り直す。
+  // (連続タップで、2通目が「古い版番号」のまま届き、サーバーに拒否されて
+  //  最新のタップが消える不具合の対策。2026-10-07)
+  var pushInFlight = false;
   function pushToCloud() {
     if (!cloud.pass || !cloud.pulled || cloud.status === "signedout") return;
     if (state && JSON.stringify(state) === cloud.lastJson) return; // 変更なしなら送らない
+    if (pushInFlight) return; // 送信完了後に、最新の状態で送り直す
     clearTimeout(pushTimer);
     pushTimer = setTimeout(pushToCloudNow, 600);
   }
   function pushToCloudNow() {
     pushTimer = null;
     if (!cloud.pass || !cloud.pulled || !state) return;
+    if (pushInFlight) return;
+    pushInFlight = true;
     var sent = JSON.stringify(state);
     gasCall({ action: "put", baseRev: cloud.rev, state: sent }).then(function (res) {
+      pushInFlight = false;
       if (res.ok) {
         cloud.rev = res.rev;
         cloud.lastJson = sent;
         cloud.status = "synced";
         cloud.lastResult = "保存成功";
+        renderSyncBadgeOnly();
+        pushToCloud(); // 保存中に変更があれば、続けて最新を送る
+        return;
       } else if (res.error === "conflict") {
         // 他の端末が先に更新していた。最新を読み込み直す(自分の未保存分は上書きされる)
         cloud.status = "connecting";
@@ -806,7 +817,7 @@
         cloud.lastResult = "保存に失敗(" + res.error + ")";
       }
       renderSyncBadgeOnly();
-    }).catch(function () { cloud.status = "error"; cloud.lastResult = "通信できませんでした"; renderSyncBadgeOnly(); });
+    }).catch(function () { pushInFlight = false; cloud.status = "error"; cloud.lastResult = "通信できませんでした"; renderSyncBadgeOnly(); });
   }
   function renderSyncBadgeOnly() {
     var el = document.getElementById("sync-badge");
@@ -819,7 +830,7 @@
   // 他の端末の更新を拾う: 画面に戻ってきたとき、30秒以上経っていれば読み込み直す
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState !== "visible") return;
-    if (!cloud.pass || cloud.status === "signedout" || pushTimer) return;
+    if (!cloud.pass || cloud.status === "signedout" || pushTimer || pushInFlight) return;
     if (Date.now() - cloud.lastPullAt < 30000) return;
     cloud.pulled = false;
     pullFromCloud();
