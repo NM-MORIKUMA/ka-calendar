@@ -1363,6 +1363,16 @@
         if (mode.isStamp) {
           next.status = prev ? prev.status : null;
           next[mode.field] = !(prev && prev[mode.field]);
+          // 日勤の印を付けたら、その日は出勤(青)にする。印を外したら、自動で変えた分だけ元の状態に戻す
+          if (mode.field === "dayShiftMark") {
+            if (next.dayShiftMark) {
+              if (next.status !== "work") { next.restoreStatus = next.status || null; next.status = "work"; next.dayShiftAuto = true; }
+            } else if (next.dayShiftAuto) {
+              next.status = next.restoreStatus !== undefined ? next.restoreStatus : null;
+              delete next.restoreStatus;
+              delete next.dayShiftAuto;
+            }
+          }
         } else {
           var curStatus = prev ? prev.status : null;
           if (curStatus === ui.activeMode) {
@@ -1375,7 +1385,7 @@
             next.status = ui.activeMode;
           }
         }
-        if (!mode.isStamp) delete next.autoTravel; // 手で状態を変えたら、自動入力の目印は外す
+        if (!mode.isStamp) { delete next.autoTravel; delete next.dayShiftAuto; } // 手で状態を変えたら、自動入力の目印は外す
         var nextForStorage = hasContent(next) ? next : null;
         if (nextForStorage) { state.days[k] = nextForStorage; } else { delete state.days[k]; }
         clearTimeout(toastTimer);
