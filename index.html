@@ -724,6 +724,8 @@
     var marks = {};
     var travel = {};
     var lastMark = anchor;
+    var uKey = anchor;
+    var restDays = {};
     for (var guard = 0; guard < 400; guard++) {
       cur = addDays(cur.y, cur.m, cur.d, 1);
       var k = dkey(cur.y, cur.m, cur.d);
@@ -738,13 +740,24 @@
       else if (phase === "out") {
         if (wd) {
           phase = "back";
+          uKey = k;
           var pv = addDays(cur.y, cur.m, cur.d, -1);
           var pk = dkey(pv.y, pv.m, pv.d);
           var pe = state.days[pk];
           if (pk > lastMark && !isWeekday(pv) && !(pe && pe.status === "leave")) travel[pk] = true;
         }
       }
-      else if (wd) { marks[k] = true; lastMark = k; phase = "out"; }
+      else if (wd) {
+        marks[k] = true; lastMark = k; phase = "out";
+        // 帰り荷の荷下ろし(=拠点の日)の直前の土日祝は休み。出勤になっていたら休みに直す(日勤・安全会議の日は除く)
+        var bk2 = addDays(cur.y, cur.m, cur.d, -1);
+        while (!isWeekday(bk2) && dkey(bk2.y, bk2.m, bk2.d) > uKey) {
+          var bkk = dkey(bk2.y, bk2.m, bk2.d);
+          var be = state.days[bkk];
+          if (be && be.status === "work" && !be.dayShiftMark && !be.safetyMark) restDays[bkk] = true;
+          bk2 = addDays(bk2.y, bk2.m, bk2.d, -1);
+        }
+      }
     }
     var on = [], off = [], work = [], unwork = [];
     dates.forEach(function (dt) {
@@ -753,6 +766,7 @@
       if (travel[k2] && !(e2 && e2.status === "work")) work.push(k2);
       // 前回の自動入力で出勤にした移動日が、いまの流れでは移動日でなくなったら休みに戻す
       if (!travel[k2] && e2 && e2.autoTravel && e2.status === "work") unwork.push(k2);
+      else if (restDays[k2] && !travel[k2]) unwork.push(k2);
       if (!e2 || !e2.status) return;
       if (marks[k2] && !e2.loadingMark) on.push(k2);
       if (!marks[k2] && e2.loadingMark) off.push(k2);
@@ -1176,7 +1190,7 @@
         '<div class="auto-list"><b>拠点の印を付ける(' + a.on.length + '日)</b><br>' + (a.on.length ? a.on.map(mdKey).join("、") : "なし") + "</div>" +
         '<div class="auto-list"><b>拠点の印を外す(' + a.off.length + '日)</b><br>' + (a.off.length ? a.off.map(mdKey).join("、") : "なし") + "</div>" +
         '<div class="auto-list"><b>移動日を出勤(青)にする(' + a.work.length + '日)</b><br>' + (a.work.length ? a.work.map(mdKey).join("、") : "なし") + "</div>" +
-        (a.unwork.length ? '<div class="auto-list"><b>移動日でなくなった日を休みに戻す(' + a.unwork.length + '日)</b><br>' + a.unwork.map(mdKey).join("、") + "</div>" : "") +
+        (a.unwork.length ? '<div class="auto-list"><b>休みに直す日(移動日でなくなった日・帰り荷の荷下ろし前の土日祝)(' + a.unwork.length + '日)</b><br>' + a.unwork.map(mdKey).join("、") + "</div>" : "") +
         '<div class="help-text">拠点の印は色を付けた日だけが対象です。移動日は、荷下ろしの前日が土日祝のときのその日です。実行後、しばらく「元に戻す」が出ます。</div>';
       btns = '<button type="button" class="btn primary" data-action="auto-mark-cancel">やめる</button>' +
         '<button type="button" class="btn" data-action="auto-mark-apply">実行する</button>';
@@ -1418,7 +1432,7 @@
         ap.unwork.forEach(function (uw) {
           var ub = Object.assign({}, state.days[uw]);
           var ua = Object.assign({}, ub);
-          ua.status = ub.restoreStatus ? ub.restoreStatus : "rest";
+          ua.status = (ub.autoTravel && ub.restoreStatus) ? ub.restoreStatus : "rest";
           delete ua.restoreStatus;
           delete ua.autoTravel;
           batch.push({ date: uw, prevEntry: ub });
