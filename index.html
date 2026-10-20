@@ -746,16 +746,18 @@
       }
       else if (wd) { marks[k] = true; lastMark = k; phase = "out"; }
     }
-    var on = [], off = [], work = [];
+    var on = [], off = [], work = [], unwork = [];
     dates.forEach(function (dt) {
       var k2 = dkey(dt.y, dt.m, dt.d);
       var e2 = state.days[k2];
       if (travel[k2] && !(e2 && e2.status === "work")) work.push(k2);
+      // 前回の自動入力で出勤にした移動日が、いまの流れでは移動日でなくなったら休みに戻す
+      if (!travel[k2] && e2 && e2.autoTravel && e2.status === "work") unwork.push(k2);
       if (!e2 || !e2.status) return;
       if (marks[k2] && !e2.loadingMark) on.push(k2);
       if (!marks[k2] && e2.loadingMark) off.push(k2);
     });
-    return { anchor: anchor, on: on, off: off, work: work, periodKey: firstKey };
+    return { anchor: anchor, on: on, off: off, work: work, unwork: unwork, periodKey: firstKey };
   }
   function mdKey(k) { var q = k.split("-"); return Number(q[1]) + "/" + Number(q[2]); }
 
@@ -1166,7 +1168,7 @@
     if (a.error) {
       body = '<p class="memo-sub">' + a.error + "</p>";
       btns = '<button type="button" class="btn primary" data-action="auto-mark-cancel">閉じる</button>';
-    } else if (!a.on.length && !a.off.length && !a.work.length) {
+    } else if (!a.on.length && !a.off.length && !a.work.length && !a.unwork.length) {
       body = '<p class="memo-sub">前の拠点(' + mdKey(a.anchor) + ')から計算しました。変更する日はありません。</p>';
       btns = '<button type="button" class="btn primary" data-action="auto-mark-cancel">閉じる</button>';
     } else {
@@ -1174,6 +1176,7 @@
         '<div class="auto-list"><b>拠点の印を付ける(' + a.on.length + '日)</b><br>' + (a.on.length ? a.on.map(mdKey).join("、") : "なし") + "</div>" +
         '<div class="auto-list"><b>拠点の印を外す(' + a.off.length + '日)</b><br>' + (a.off.length ? a.off.map(mdKey).join("、") : "なし") + "</div>" +
         '<div class="auto-list"><b>移動日を出勤(青)にする(' + a.work.length + '日)</b><br>' + (a.work.length ? a.work.map(mdKey).join("、") : "なし") + "</div>" +
+        (a.unwork.length ? '<div class="auto-list"><b>移動日でなくなった日を休みに戻す(' + a.unwork.length + '日)</b><br>' + a.unwork.map(mdKey).join("、") + "</div>" : "") +
         '<div class="help-text">拠点の印は色を付けた日だけが対象です。移動日は、荷下ろしの前日が土日祝のときのその日です。実行後、しばらく「元に戻す」が出ます。</div>';
       btns = '<button type="button" class="btn primary" data-action="auto-mark-cancel">やめる</button>' +
         '<button type="button" class="btn" data-action="auto-mark-apply">実行する</button>';
@@ -1358,6 +1361,7 @@
             next.status = ui.activeMode;
           }
         }
+        if (!mode.isStamp) delete next.autoTravel; // 手で状態を変えたら、自動入力の目印は外す
         var nextForStorage = hasContent(next) ? next : null;
         if (nextForStorage) { state.days[k] = nextForStorage; } else { delete state.days[k]; }
         clearTimeout(toastTimer);
@@ -1407,8 +1411,18 @@
           var wa = Object.assign({}, wb || {});
           wa.restoreStatus = wb ? wb.status : null;
           wa.status = "work";
+          wa.autoTravel = true;
           batch.push({ date: wk, prevEntry: wb });
           state.days[wk] = wa;
+        });
+        ap.unwork.forEach(function (uw) {
+          var ub = Object.assign({}, state.days[uw]);
+          var ua = Object.assign({}, ub);
+          ua.status = ub.restoreStatus ? ub.restoreStatus : "rest";
+          delete ua.restoreStatus;
+          delete ua.autoTravel;
+          batch.push({ date: uw, prevEntry: ub });
+          state.days[uw] = ua;
         });
         // 「自動入力前に戻す」用に、日ごとの最初の状態を月度ごとに残す(2回実行しても最初の状態に戻れる)
         var pks = ap.periodKey;
@@ -1416,7 +1430,7 @@
         var bk = state.autoBackup[pks] || {};
         batch.forEach(function (b) { if (!(b.date in bk)) bk[b.date] = b.prevEntry; });
         state.autoBackup[pks] = bk;
-        ui.lastEdit = { batch: batch, label: "拠点を自動入力しました(印+" + ap.on.length + "・印−" + ap.off.length + "・移動日出勤" + ap.work.length + ")" };
+        ui.lastEdit = { batch: batch, label: "拠点を自動入力しました(印+" + ap.on.length + "・印−" + ap.off.length + "・移動日出勤" + ap.work.length + "・休みに戻す" + ap.unwork.length + ")" };
         toastTimer = setTimeout(function () { ui.lastEdit = null; render(); }, 15000);
         ui.autoPlan = null;
         render();
