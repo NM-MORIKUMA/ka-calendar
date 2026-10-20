@@ -169,6 +169,10 @@
   .tri-v .unit { font-size: 10px; font-weight: 400; color: var(--ink-soft); margin-left: 1px; }
   .auto-btn { width: 100%; margin-top: 6px; padding: 6px 2px; font-size: 11px; font-weight: 700; border-radius: 6px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); cursor: pointer; }
   .auto-list { font-size: 12px; margin: 6px 0; line-height: 1.6; }
+  .judge-row { display: flex; align-items: stretch; gap: 4px; margin-top: 4px; }
+  .judge-row .judge { flex: 1; margin-top: 0; min-width: 0; }
+  .remain-chip { flex-shrink: 0; font-size: 11px; padding: 3px 6px; border-radius: 4px; background: var(--paper-sunken); color: var(--ink-soft); display: flex; align-items: center; white-space: nowrap; }
+  .remain-chip b { font-size: 14px; color: var(--accent-strong); margin: 0 1px; }
   .judge { font-size: 11px; font-weight: 700; margin-top: 4px; padding: 3px 6px; border-radius: 4px; }
   .judge-ng { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
   .judge-ok { color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 14%, transparent); }
@@ -718,27 +722,40 @@
     var cur = { y: a[0], m: a[1], d: a[2] };
     var phase = "out";
     var marks = {};
+    var travel = {};
+    var lastMark = anchor;
     for (var guard = 0; guard < 400; guard++) {
       cur = addDays(cur.y, cur.m, cur.d, 1);
       var k = dkey(cur.y, cur.m, cur.d);
       if (k > lastKey) break;
       var e = state.days[k];
+      if (e && e.status === "work" && (e.dayShiftMark || e.safetyMark)) { phase = "home"; continue; }
+      // 上り途中の土日祝は基本的に休み(宵積みのあと)。荷下ろしの日の前日だけが移動日(出勤)。
+      if (phase === "out" && !isWeekday(cur)) continue;
       if (!e || e.status !== "work") continue;
-      if (e.dayShiftMark || e.safetyMark) { phase = "home"; continue; }
       var wd = isWeekday(cur);
-      if (phase === "home") { if (wd) { marks[k] = true; phase = "out"; } }
-      else if (phase === "out") { if (wd) phase = "back"; }
-      else if (wd) { marks[k] = true; phase = "out"; }
+      if (phase === "home") { if (wd) { marks[k] = true; lastMark = k; phase = "out"; } }
+      else if (phase === "out") {
+        if (wd) {
+          phase = "back";
+          var pv = addDays(cur.y, cur.m, cur.d, -1);
+          var pk = dkey(pv.y, pv.m, pv.d);
+          var pe = state.days[pk];
+          if (pk > lastMark && !isWeekday(pv) && !(pe && pe.status === "leave")) travel[pk] = true;
+        }
+      }
+      else if (wd) { marks[k] = true; lastMark = k; phase = "out"; }
     }
-    var on = [], off = [];
+    var on = [], off = [], work = [];
     dates.forEach(function (dt) {
       var k2 = dkey(dt.y, dt.m, dt.d);
       var e2 = state.days[k2];
+      if (travel[k2] && !(e2 && e2.status === "work")) work.push(k2);
       if (!e2 || !e2.status) return;
       if (marks[k2] && !e2.loadingMark) on.push(k2);
       if (!marks[k2] && e2.loadingMark) off.push(k2);
     });
-    return { anchor: anchor, on: on, off: off };
+    return { anchor: anchor, on: on, off: off, work: work, periodKey: firstKey };
   }
   function mdKey(k) { var q = k.split("-"); return Number(q[1]) + "/" + Number(q[2]); }
 
@@ -1017,10 +1034,11 @@
       '<div class="tri-cell tri-work"><div class="tri-l">出勤</div><div class="tri-v digits">' + worked + '<span class="unit">日</span></div></div>' +
       '<div class="tri-cell tri-leave"><div class="tri-l">有給</div><div class="tri-v digits">' + leaveN + '<span class="unit">日</span></div></div>' +
       '<div class="tri-cell"><div class="tri-l">所定</div><div class="tri-v digits">' + (quota !== null ? quota + '<span class="unit">日</span>' : "—") + "</div></div>" +
-      "</div>" + judge + "</div>" +
-      '<div class="stat-card"><div class="stat-label">有給残日数</div>' +
-      '<div class="stat-panel"><div class="stat-value digits">' + balance + '<span class="unit">日</span></div></div>' +
-      '<button type="button" class="auto-btn" data-action="auto-mark-open">拠点を自動入力</button></div>' +
+      "</div>" +
+      '<div class="judge-row">' + judge + '<div class="remain-chip">有給残 <b class="digits">' + balance + "</b>日</div></div></div>" +
+      '<div class="stat-card"><div class="stat-label">拠点の自動入力</div>' +
+      '<button type="button" class="auto-btn" data-action="auto-mark-open">拠点を自動入力</button>' +
+      (autoBackupCount() ? '<button type="button" class="auto-btn" data-action="auto-revert-open">自動入力の前に戻す</button>' : "") + "</div>" +
       "</div>"
     );
   }
@@ -1129,21 +1147,34 @@
     );
   }
 
+  function autoBackupCount() {
+    var d = periodDates(ui.viewPeriod);
+    var b = state.autoBackup && state.autoBackup[dkey(d[0].y, d[0].m, d[0].d)];
+    return b ? Object.keys(b).length : 0;
+  }
   function renderAutoDialog() {
+    if (ui.autoRevert) {
+      var n = autoBackupCount();
+      return '<div class="onboard-overlay"><div class="onboard-card memo-card"><h1>自動入力の前に戻しますか?</h1>' +
+        '<p class="memo-sub">自動入力で変えた' + n + '日分(拠点の印・移動日の出勤)を、自動入力する直前の状態に戻します。自動入力のあとに、その日へ手で入れた内容も戻ります。</p>' +
+        '<div class="btn-row"><button type="button" class="btn primary" data-action="auto-mark-cancel">やめる</button>' +
+        '<button type="button" class="btn" data-action="auto-revert-apply">戻す</button></div></div></div>';
+    }
     var a = ui.autoPlan;
     if (!a) return "";
     var body, btns;
     if (a.error) {
       body = '<p class="memo-sub">' + a.error + "</p>";
       btns = '<button type="button" class="btn primary" data-action="auto-mark-cancel">閉じる</button>';
-    } else if (!a.on.length && !a.off.length) {
+    } else if (!a.on.length && !a.off.length && !a.work.length) {
       body = '<p class="memo-sub">前の拠点(' + mdKey(a.anchor) + ')から計算しました。変更する日はありません。</p>';
       btns = '<button type="button" class="btn primary" data-action="auto-mark-cancel">閉じる</button>';
     } else {
       body = '<p class="memo-sub">前の拠点(' + mdKey(a.anchor) + ')から計算しました。</p>' +
         '<div class="auto-list"><b>拠点の印を付ける(' + a.on.length + '日)</b><br>' + (a.on.length ? a.on.map(mdKey).join("、") : "なし") + "</div>" +
         '<div class="auto-list"><b>拠点の印を外す(' + a.off.length + '日)</b><br>' + (a.off.length ? a.off.map(mdKey).join("、") : "なし") + "</div>" +
-        '<div class="help-text">色を付けた日だけが対象です。実行後、しばらく「元に戻す」が出ます。</div>';
+        '<div class="auto-list"><b>移動日を出勤(青)にする(' + a.work.length + '日)</b><br>' + (a.work.length ? a.work.map(mdKey).join("、") : "なし") + "</div>" +
+        '<div class="help-text">拠点の印は色を付けた日だけが対象です。移動日は、荷下ろしの前日が土日祝のときのその日です。実行後、しばらく「元に戻す」が出ます。</div>';
       btns = '<button type="button" class="btn primary" data-action="auto-mark-cancel">やめる</button>' +
         '<button type="button" class="btn" data-action="auto-mark-apply">実行する</button>';
     }
@@ -1341,7 +1372,24 @@
         render();
         break;
       }
-      case "auto-mark-cancel": ui.autoPlan = null; render(); break;
+      case "auto-mark-cancel": ui.autoPlan = null; ui.autoRevert = false; render(); break;
+      case "auto-revert-open": ui.autoRevert = true; render(); break;
+      case "auto-revert-apply": {
+        var rp = ui.viewPeriod, rd = periodDates(rp);
+        var rk = dkey(rd[0].y, rd[0].m, rd[0].d);
+        var rb = state.autoBackup && state.autoBackup[rk];
+        if (rb) {
+          Object.keys(rb).forEach(function (d) {
+            if (rb[d]) { state.days[d] = rb[d]; } else { delete state.days[d]; }
+          });
+          delete state.autoBackup[rk];
+        }
+        ui.autoRevert = false;
+        clearTimeout(toastTimer);
+        ui.lastEdit = null;
+        render();
+        break;
+      }
       case "auto-mark-apply": {
         var ap = ui.autoPlan;
         if (!ap || ap.error) break;
@@ -1354,7 +1402,21 @@
           state.days[bk] = after;
         });
         clearTimeout(toastTimer);
-        ui.lastEdit = { batch: batch, label: "拠点の印を自動入力しました(付ける" + ap.on.length + "日・外す" + ap.off.length + "日)" };
+        ap.work.forEach(function (wk) {
+          var wb = state.days[wk] ? Object.assign({}, state.days[wk]) : null;
+          var wa = Object.assign({}, wb || {});
+          wa.restoreStatus = wb ? wb.status : null;
+          wa.status = "work";
+          batch.push({ date: wk, prevEntry: wb });
+          state.days[wk] = wa;
+        });
+        // 「自動入力前に戻す」用に、日ごとの最初の状態を月度ごとに残す(2回実行しても最初の状態に戻れる)
+        var pks = ap.periodKey;
+        state.autoBackup = state.autoBackup || {};
+        var bk = state.autoBackup[pks] || {};
+        batch.forEach(function (b) { if (!(b.date in bk)) bk[b.date] = b.prevEntry; });
+        state.autoBackup[pks] = bk;
+        ui.lastEdit = { batch: batch, label: "拠点を自動入力しました(印+" + ap.on.length + "・印−" + ap.off.length + "・移動日出勤" + ap.work.length + ")" };
         toastTimer = setTimeout(function () { ui.lastEdit = null; render(); }, 15000);
         ui.autoPlan = null;
         render();
