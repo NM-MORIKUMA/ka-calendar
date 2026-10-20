@@ -124,7 +124,7 @@
   /* ---------- Dashboard ---------- */
   .dashboard {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 2fr 1fr;
     gap: 8px;
     padding: 10px 12px;
   }
@@ -155,6 +155,18 @@
   .stat-sub { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
   .stat-sub .diff-plus { color: var(--accent-strong); font-weight: 700; }
   .stat-sub .diff-minus { color: var(--danger); font-weight: 700; }
+  .tri { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 4px; }
+  .tri-cell { background: var(--paper-sunken); border-radius: 4px; padding: 3px 6px; }
+  .tri-work { border: 2px solid var(--status-work); background: color-mix(in srgb, var(--status-work) 25%, var(--paper-raised)); }
+  .tri-leave { border: 2px solid var(--status-leave); background: color-mix(in srgb, var(--status-leave) 30%, var(--paper-raised)); }
+  .tri-l { font-size: 10px; color: var(--ink-soft); }
+  .tri-v { font-size: 18px; font-weight: 700; color: var(--accent-strong); }
+  .tri-v .unit { font-size: 10px; font-weight: 400; color: var(--ink-soft); margin-left: 1px; }
+  .judge { font-size: 11px; font-weight: 700; margin-top: 4px; padding: 3px 6px; border-radius: 4px; }
+  .judge-ng { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+  .judge-ok { color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .judge-over { color: var(--ink); background: var(--paper-sunken); }
+  .judge-none { font-weight: 400; color: var(--ink-soft); }
 
   /* ---------- Grid ---------- */
   /* Bottom padding clears the fixed toolbar, which is two rows tall (statuses / marks)
@@ -206,6 +218,13 @@
     border-radius: 50%;
     border: 1px solid var(--stamp-strong);
     color: var(--stamp-strong);
+  }
+  .day-cell .day-num .mo { font-size: 9px; font-weight: 400; color: var(--ink-soft); }
+  .day-cell .day-num.holiday .mo { color: inherit; }
+  /* Landscape (tablet): the square cells are too tall to fit the whole month on one screen,
+     so cell height follows the screen height instead (header + dashboard + toolbar ~360px incl. gaps, sized for a 6-row month). */
+  @media (orientation: landscape) and (min-width: 700px) {
+    .day-cell { aspect-ratio: auto; min-height: 30px; height: clamp(30px, calc((100dvh - 360px) / 6), 64px); }
   }
   .day-memo {
     font-size: 9px;
@@ -670,6 +689,14 @@
     if (!state.quotas[fy]) state.quotas[fy] = {};
     state.quotas[fy][monthKey] = (value === "" || value === null) ? null : Number(value);
   }
+  function countLeave(p) {
+    var count = 0;
+    periodDates(p).forEach(function (dt) {
+      var e = state.days[dkey(dt.y, dt.m, dt.d)];
+      if (e && e.status === "leave") count++;
+    });
+    return count;
+  }
   function countWorked(p) {
     var dates = periodDates(p);
     var count = 0;
@@ -916,23 +943,26 @@
     var balance = computeLeaveBalance();
     var worked = countWorked(p);
     var quota = getQuota(p);
-    var subHtml;
+    var leaveN = countLeave(p);
+    var judge;
     if (quota === null) {
-      subHtml = "実績 " + worked + "日／所定未設定";
+      judge = '<div class="judge judge-none">所定日数が未設定です(設定で入力)</div>';
     } else {
-      var diff = worked - quota;
-      var diffHtml = diff > 0
-        ? '<span class="diff-plus">+' + diff + "</span>"
-        : diff < 0
-        ? '<span class="diff-minus">' + diff + "</span>"
-        : "±0";
-      subHtml = "実績 " + worked + " / 所定 " + quota + "（" + diffHtml + "）";
+      var diff = worked + leaveN - quota;
+      judge = diff < 0
+        ? '<div class="judge judge-ng">あと' + (-diff) + "日足りません</div>"
+        : diff > 0
+        ? '<div class="judge judge-over">所定より' + diff + "日多いです</div>"
+        : '<div class="judge judge-ok">出勤' + worked + "+有給" + leaveN + "=" + quota + "日 ぴったり</div>";
     }
     return (
       '<div class="dashboard">' +
-      '<div class="stat-card"><div class="stat-label">当期実績 / 所定</div>' +
-      '<div class="stat-panel"><div class="stat-value digits" style="font-size:16px">' + worked + (quota !== null ? " / " + quota : "") + "</div></div>" +
-      '<div class="stat-sub">' + subHtml + "</div></div>" +
+      '<div class="stat-card"><div class="stat-label">当期の日数</div>' +
+      '<div class="tri">' +
+      '<div class="tri-cell tri-work"><div class="tri-l">出勤</div><div class="tri-v digits">' + worked + '<span class="unit">日</span></div></div>' +
+      '<div class="tri-cell tri-leave"><div class="tri-l">有給</div><div class="tri-v digits">' + leaveN + '<span class="unit">日</span></div></div>' +
+      '<div class="tri-cell"><div class="tri-l">所定</div><div class="tri-v digits">' + (quota !== null ? quota + '<span class="unit">日</span>' : "—") + "</div></div>" +
+      "</div>" + judge + "</div>" +
       '<div class="stat-card"><div class="stat-label">有給残日数</div>' +
       '<div class="stat-panel"><div class="stat-value digits">' + balance + '<span class="unit">日</span></div></div></div>' +
       "</div>"
@@ -989,7 +1019,7 @@
       '<button type="button" class="' + cls + '" data-action="tap-day" data-date="' + k + '"' +
       (status ? ' data-status="' + status + '"' : "") + ">" +
       '<span class="day-head">' +
-      '<span class="day-num digits' + (red ? " holiday" : "") + '">' + dt.d + "</span>" +
+      '<span class="day-num digits' + (red ? " holiday" : "") + '">' + (dt.d === 1 || dt.d === 16 ? '<span class="mo">' + dt.m + "/</span>" + dt.d : dt.d) + "</span>" +
       (badges ? '<span class="stamp-badges">' + badges + "</span>" : "") +
       "</span>" +
       (memo ? '<span class="day-memo" title="' + esc(memo) + '">' + esc(memo) + "</span>" : "") +
