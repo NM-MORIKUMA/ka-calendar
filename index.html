@@ -171,9 +171,11 @@
   .auto-list { font-size: 12px; margin: 6px 0; line-height: 1.6; }
   .judge-row { display: flex; align-items: stretch; gap: 4px; margin-top: 4px; }
   .judge-row .judge { flex: 1; margin-top: 0; min-width: 0; }
-  .remain-col { flex-shrink: 0; display: flex; flex-direction: column; gap: 3px; }
-  .remain-chip { flex-shrink: 0; font-size: 11px; padding: 3px 6px; border-radius: 4px; background: var(--paper-sunken); color: var(--ink-soft); display: flex; align-items: center; white-space: nowrap; }
-  .remain-chip b { font-size: 14px; color: var(--accent-strong); margin: 0 1px; }
+  /* 2026-11-16: the two leave-balance chips get more room (the judge box beside them may shrink), darker and bolder text. */
+  .remain-col { flex: 0 0 auto; max-width: 72%; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .remain-chip { flex-shrink: 0; font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 4px; background: var(--paper-sunken); color: var(--ink); display: flex; align-items: center; white-space: nowrap; }
+  .remain-chip b { font-size: 15px; font-weight: 800; color: var(--accent-strong); margin: 0 1px 0 auto; padding-left: 4px; }
+  .remain-ditto { display: inline-block; width: 3em; text-align: center; }
   .judge { font-size: 11px; font-weight: 700; margin-top: 4px; padding: 3px 6px; border-radius: 4px; }
   .judge-ng { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
   .judge-ok { color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 14%, transparent); }
@@ -1089,8 +1091,8 @@
       '<div class="tri-cell"><div class="tri-l">所定</div><div class="tri-v digits">' + (quota !== null ? quota + '<span class="unit">日</span>' : "—") + "</div></div>" +
       "</div>" +
       '<div class="judge-row">' + judge + '<div class="remain-col">' +
-      '<div class="remain-chip" title="表示中の月度の最終日までの有給残(この月度までに取る・取る予定の有給を引いた数)">有給残 <b class="digits">' + balance + "</b>日</div>" +
-      '<div class="remain-chip" title="次の起算日(2/16)の前日までの有給残(それまでに取る予定の有給をすべて引いた数)">全有給残 <b class="digits">' + balanceAll + "</b>日</div>" +
+      '<div class="remain-chip" title="表示中の月度の最終日までの有給残(この月度までに取る・取る予定の有給を引いた数)">有休残(月度末) <b class="digits">' + balance + "</b>日</div>" +
+      '<div class="remain-chip" title="次の起算日(2/16)の前日までの有給残(それまでに取る予定の有給をすべて引いた数)"><span class="remain-ditto">〃</span>(起算日迄) <b class="digits">' + balanceAll + "</b>日</div>" +
       "</div></div></div>" +
       '<div class="stat-card"><div class="stat-label">拠点の自動入力</div>' +
       '<button type="button" class="auto-btn" data-action="auto-mark-open">拠点を自動入力</button>' +
