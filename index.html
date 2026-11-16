@@ -238,7 +238,8 @@
     /* 2026-11-16: the 30px floor was shorter than date row + memo line (~36px), so memos were cut in half
        on short tablet screens. Floor raised to 40px; a 5-week period (the usual case) divides by 5 so the
        spare row of space below the grid is used. A 6-week month just scrolls a little. */
-    .day-cell { aspect-ratio: auto; min-height: 40px; height: clamp(40px, calc((100dvh - 360px) / 5), 72px); }
+    /* 2026-11-16 (2): two memo lines per day need date row + 2 memo lines (~48px), so the floor is 52px. */
+    .day-cell { aspect-ratio: auto; min-height: 52px; height: clamp(52px, calc((100dvh - 360px) / 5), 72px); }
   }
   .day-memo {
     font-size: 9px;
@@ -561,7 +562,7 @@
 
   /* ---------- state ---------- */
   var state = null;
-  var ui = { activeMode: null, lastEdit: null, settingsOpen: false, settingsFY: null, viewPeriod: periodOf(TODAY.y, TODAY.m, TODAY.d), memoDate: null, memoConfirm: false, memoDraft: null, autoPlan: null };
+  var ui = { activeMode: null, lastEdit: null, settingsOpen: false, settingsFY: null, viewPeriod: periodOf(TODAY.y, TODAY.m, TODAY.d), memoDate: null, memoConfirm: false, memoDraft: null, memoDraft2: null, autoPlan: null };
   var toastTimer = null;
   // Array order drives the toolbar order: the first four are exclusive statuses (top row),
   // the rest are marks that stack on top of a status (bottom row). 希望休 is a mark rather
@@ -588,7 +589,7 @@
   // A day is worth storing if it carries anything at all -- status, a mark, or a memo.
   function hasContent(entry) {
     if (!entry) return false;
-    return !!(entry.status || entry.memo || hasAnyMark(entry));
+    return !!(entry.status || entry.memo || entry.memo2 || hasAnyMark(entry));
   }
   // Memo text is user input spliced into innerHTML, so it has to be escaped or a stray
   // "<" silently breaks the whole grid render.
@@ -979,10 +980,13 @@
     if (memoInput) {
       memoInput.focus();
       memoInput.select();
-      memoInput.addEventListener("keydown", function (ev) {
+      var memoKeydown = function (ev) {
         if (ev.key === "Enter") { ev.preventDefault(); handleAction("memo-save"); }
         else if (ev.key === "Escape") { ui.memoDate = null; render(); }
-      });
+      };
+      memoInput.addEventListener("keydown", memoKeydown);
+      var memoInput2 = document.getElementById("memo-input2");
+      if (memoInput2) memoInput2.addEventListener("keydown", memoKeydown);
     }
   }
 
@@ -1109,6 +1113,7 @@
         }).join("")
       : "";
     var memo = entry && entry.memo ? entry.memo : "";
+    var memo2 = entry && entry.memo2 ? entry.memo2 : ""; // 2026-11-16: second memo line (memo = 1st, memo2 = 2nd; old data has only memo)
     return (
       '<button type="button" class="' + cls + '" data-action="tap-day" data-date="' + k + '"' +
       (status ? ' data-status="' + status + '"' : "") + ">" +
@@ -1117,6 +1122,7 @@
       (badges ? '<span class="stamp-badges">' + badges + "</span>" : "") +
       "</span>" +
       (memo ? '<span class="day-memo" title="' + esc(memo) + '">' + esc(memo) + "</span>" : "") +
+      (memo2 ? '<span class="day-memo" title="' + esc(memo2) + '">' + esc(memo2) + "</span>" : "") +
       "</button>"
     );
   }
@@ -1204,12 +1210,15 @@
   }
 
   function renderMemoDialog() {
-    if (!ui.memoDate) { ui.memoConfirm = false; ui.memoDraft = null; return ""; }
+    if (!ui.memoDate) { ui.memoConfirm = false; ui.memoDraft = null; ui.memoDraft2 = null; return ""; }
     var k = ui.memoDate;
     var parts = k.split("-").map(Number);
     var entry = state.days[k];
     var cur = entry && entry.memo ? entry.memo : "";
+    var cur2 = entry && entry.memo2 ? entry.memo2 : "";
     if (ui.memoDraft !== null) cur = ui.memoDraft;
+    if (ui.memoDraft2 !== null) cur2 = ui.memoDraft2;
+    var savedBoth = [entry && entry.memo ? entry.memo : "", entry && entry.memo2 ? entry.memo2 : ""].filter(function (t) { return t; });
     var dow = ["日","月","火","水","木","金","土"][dayOfWeek(parts[0], parts[1], parts[2])];
     // 「消す」を押したときの確認画面(間違えて消さないための、もう一段階)
     if (ui.memoConfirm) {
@@ -1217,7 +1226,7 @@
         '<div class="onboard-overlay"><div class="onboard-card memo-card">' +
         "<h1>" + parts[1] + "月" + parts[2] + "日のメモを消しますか?</h1>" +
         '<p class="memo-sub">消したメモは元に戻せません(直後の数秒間だけ「元に戻す」が出ます)。</p>' +
-        '<div class="help-text" style="font-weight:700;color:var(--ink)">「' + esc(entry && entry.memo ? entry.memo : cur) + '」</div>' +
+        '<div class="help-text" style="font-weight:700;color:var(--ink)">' + (savedBoth.length ? savedBoth : [cur]).map(function (t) { return "「" + esc(t) + "」"; }).join("<br>") + '</div>' +
         '<div class="btn-row">' +
         '<button type="button" class="btn primary" data-action="memo-clear-no">やめる(消さない)</button>' +
         '<button type="button" class="btn" data-action="memo-clear-yes">消す</button>' +
@@ -1228,8 +1237,9 @@
       '<div class="onboard-overlay" data-action="memo-backdrop"><div class="onboard-card memo-card">' +
       "<h1>" + parts[1] + "月" + parts[2] + "日（" + dow + "）のメモ</h1>" +
       '<p class="memo-sub">' + (entry && entry.status ? STATUS_LABEL[entry.status] : "未入力") + "</p>" +
-      '<input type="text" id="memo-input" maxlength="20" placeholder="例: 健診" value="' + esc(cur) + '" />' +
-      '<div class="help-text">マスに表示されるのは先頭の数文字です。長い場合は「…」と省略され、全文はこの画面で確認できます。</div>' +
+      '<input type="text" id="memo-input" maxlength="20" placeholder="メモ1 例: 健診" value="' + esc(cur) + '" />' +
+      '<input type="text" id="memo-input2" maxlength="20" placeholder="メモ2(なくても可)" value="' + esc(cur2) + '" style="margin-top:8px" />' +
+      '<div class="help-text">マスには、メモ1・メモ2が1行ずつ表示されます。表示されるのは先頭の数文字です。長い場合は「…」と省略され、全文はこの画面で確認できます。</div>' +
       '<div class="btn-row">' +
       '<button type="button" class="btn" data-action="memo-cancel">やめる</button>' +
       '<button type="button" class="btn" data-action="memo-clear">消す</button>' +
@@ -1490,9 +1500,11 @@
         var ck = ui.memoDate;
         if (!ck) break;
         var cEntry = state.days[ck];
-        if (cEntry && cEntry.memo) {
+        if (cEntry && (cEntry.memo || cEntry.memo2)) {
           var cInput = document.getElementById("memo-input");
+          var cInput2 = document.getElementById("memo-input2");
           ui.memoDraft = cInput ? cInput.value : null;
+          ui.memoDraft2 = cInput2 ? cInput2.value : null;
           ui.memoConfirm = true;
           render();
           break;
@@ -1508,10 +1520,15 @@
         var mk = ui.memoDate;
         if (!mk) break;
         var input = document.getElementById("memo-input");
-        var text = (action === "memo-clear" || action === "memo-clear-yes") ? "" : (input ? input.value.trim() : "");
+        var input2 = document.getElementById("memo-input2");
+        var isClear = (action === "memo-clear" || action === "memo-clear-yes");
+        var text = isClear ? "" : (input ? input.value.trim() : "");
+        var text2 = isClear ? "" : (input2 ? input2.value.trim() : "");
         var mPrev = state.days[mk] ? Object.assign({}, state.days[mk]) : null;
         var mNext = Object.assign({}, mPrev || {});
         if (text) { mNext.memo = text; } else { delete mNext.memo; }
+        if (text2) { mNext.memo2 = text2; } else { delete mNext.memo2; }
+        text = text || text2; // for the toast label below: "saved" if either memo has text
         var mStore = hasContent(mNext) ? mNext : null;
         if (mStore) { state.days[mk] = mStore; } else { delete state.days[mk]; }
         var mParts = mk.split("-").map(Number);
