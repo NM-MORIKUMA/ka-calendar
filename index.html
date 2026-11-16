@@ -171,6 +171,7 @@
   .auto-list { font-size: 12px; margin: 6px 0; line-height: 1.6; }
   .judge-row { display: flex; align-items: stretch; gap: 4px; margin-top: 4px; }
   .judge-row .judge { flex: 1; margin-top: 0; min-width: 0; }
+  .remain-col { flex-shrink: 0; display: flex; flex-direction: column; gap: 3px; }
   .remain-chip { flex-shrink: 0; font-size: 11px; padding: 3px 6px; border-radius: 4px; background: var(--paper-sunken); color: var(--ink-soft); display: flex; align-items: center; white-space: nowrap; }
   .remain-chip b { font-size: 14px; color: var(--accent-strong); margin: 0 1px; }
   .judge { font-size: 11px; font-weight: 700; margin-top: 4px; padding: 3px 6px; border-radius: 4px; }
@@ -662,11 +663,33 @@
   // The manual-adjustment number doubles as a non-expiring "baseline pool" (its real lot
   // composition is unknown, so it never expires) and is always consumed first, since it
   // represents the oldest leave available relative to any auto-granted lot tracked later.
-  function computeLeaveLots() {
+  // 2026-11-16: optional asOfKey ("YYYY-MM-DD") = balance as of that day. Only leave days up to and
+  // including that day are used, and lots count as expired if they expire before it. Without asOfKey
+  // the behaviour is unchanged (every leave day, expiry judged against today).
+  // futureGrants = also count the yearly 20-day grants (Feb 15) that fall between firstRunDate and asOfKey
+  // but have not been added to state.leaveGrants yet (they are only added once today reaches that date).
+  function computeLeaveLots(asOfKey, futureGrants) {
+    var refKey = asOfKey || TODAY_KEY;
     var baseline = { grantedOn: null, expiresOn: null, amount: Math.max(0, state.leaveManualAdjustment || 0), isBaseline: true };
-    var grants = [baseline].concat(state.leaveGrants.slice());
+    var gs = state.leaveGrants.slice();
+    if (asOfKey) {
+      // "<" not "<=": the real 起算日 is Feb 16 (the app files the yearly grant under Feb 15), so a grant
+      // does not count on the 15th itself -- the period ending Feb 15 must not already include the new 20 days.
+      gs = gs.filter(function (g) { return g.grantedOn < asOfKey; });
+      if (futureGrants && state.firstRunDate) {
+        var asOfY = parseInt(asOfKey.slice(0, 4), 10);
+        for (var yy = parseInt(state.firstRunDate.slice(0, 4), 10); yy <= asOfY; yy++) {
+          var gk = dkey(yy, 2, 15);
+          if (gk > state.firstRunDate && gk < asOfKey && !gs.some(function (g) { return g.grantedOn === gk; })) {
+            gs.push({ grantedOn: gk, amount: 20, expiresOn: dkey(yy + 2, 2, 14) });
+          }
+        }
+        gs.sort(function (a, b) { return a.grantedOn < b.grantedOn ? -1 : a.grantedOn > b.grantedOn ? 1 : 0; });
+      }
+    }
+    var grants = [baseline].concat(gs);
     var consumed = grants.map(function () { return 0; });
-    var leaveDays = Object.keys(state.days).filter(function (k) { return state.days[k].status === "leave"; }).sort();
+    var leaveDays = Object.keys(state.days).filter(function (k) { return state.days[k].status === "leave" && (!asOfKey || k <= asOfKey); }).sort();
     leaveDays.forEach(function (dk) {
       for (var i = 0; i < grants.length; i++) {
         if (consumed[i] < grants[i].amount) { consumed[i]++; break; }
@@ -679,14 +702,14 @@
         amount: g.amount,
         consumed: consumed[i],
         remaining: g.amount - consumed[i],
-        expired: !!g.expiresOn && g.expiresOn < TODAY_KEY,
+        expired: !!g.expiresOn && g.expiresOn < refKey,
         isBaseline: !!g.isBaseline
       };
     });
   }
 
-  function computeLeaveBalance() {
-    var lots = computeLeaveLots();
+  function computeLeaveBalance(asOfKey, futureGrants) {
+    var lots = computeLeaveLots(asOfKey, futureGrants);
     var total = 0;
     lots.forEach(function (l) { if (!l.expired) total += l.remaining; });
     var extra = (state.leaveManualAdjustment || 0) < 0 ? state.leaveManualAdjustment : 0;
@@ -1036,7 +1059,13 @@
 
   function renderDashboard() {
     var p = ui.viewPeriod;
-    var balance = computeLeaveBalance();
+    // 有給残 = balance at the end of the period on screen (counts leave days booked up to that day, future ones included).
+    var pe = periodEnd(p);
+    var balance = computeLeaveBalance(dkey(pe.y, pe.m, pe.d), true);
+    // 全有給残 = balance up to the day before the next 起算日 (Feb 16), counting every leave day booked until then.
+    // The next yearly grant is not included (it arrives on the 起算日 itself).
+    var annivY = (TODAY.m > 2 || (TODAY.m === 2 && TODAY.d >= 16)) ? TODAY.y + 1 : TODAY.y;
+    var balanceAll = computeLeaveBalance(dkey(annivY, 2, 15), false);
     var worked = countWorked(p);
     var quota = getQuota(p);
     var leaveN = countLeave(p);
@@ -1059,7 +1088,10 @@
       '<div class="tri-cell tri-leave"><div class="tri-l">有給</div><div class="tri-v digits">' + leaveN + '<span class="unit">日</span></div></div>' +
       '<div class="tri-cell"><div class="tri-l">所定</div><div class="tri-v digits">' + (quota !== null ? quota + '<span class="unit">日</span>' : "—") + "</div></div>" +
       "</div>" +
-      '<div class="judge-row">' + judge + '<div class="remain-chip">有給残 <b class="digits">' + balance + "</b>日</div></div></div>" +
+      '<div class="judge-row">' + judge + '<div class="remain-col">' +
+      '<div class="remain-chip" title="表示中の月度の最終日までの有給残(この月度までに取る・取る予定の有給を引いた数)">有給残 <b class="digits">' + balance + "</b>日</div>" +
+      '<div class="remain-chip" title="次の起算日(2/16)の前日までの有給残(それまでに取る予定の有給をすべて引いた数)">全有給残 <b class="digits">' + balanceAll + "</b>日</div>" +
+      "</div></div></div>" +
       '<div class="stat-card"><div class="stat-label">拠点の自動入力</div>' +
       '<button type="button" class="auto-btn" data-action="auto-mark-open">拠点を自動入力</button>' +
       (autoBackupCount() ? '<button type="button" class="auto-btn" data-action="auto-revert-open">自動入力の前に戻す</button>' : "") + "</div>" +
