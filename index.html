@@ -198,7 +198,7 @@
   }
   .day-cell {
     position: relative;
-    aspect-ratio: 1 / 1;
+    aspect-ratio: 5 / 6; /* 2026-11-16: slightly taller than square so a memo line is never clipped */
     border-radius: 4px;
     border: 1px solid var(--line);
     background: var(--paper-raised);
@@ -235,7 +235,10 @@
   /* Landscape (tablet): the square cells are too tall to fit the whole month on one screen,
      so cell height follows the screen height instead (header + dashboard + toolbar ~360px incl. gaps, sized for a 6-row month). */
   @media (orientation: landscape) and (min-width: 700px) {
-    .day-cell { aspect-ratio: auto; min-height: 30px; height: clamp(30px, calc((100dvh - 360px) / 6), 64px); }
+    /* 2026-11-16: the 30px floor was shorter than date row + memo line (~36px), so memos were cut in half
+       on short tablet screens. Floor raised to 40px; a 5-week period (the usual case) divides by 5 so the
+       spare row of space below the grid is used. A 6-week month just scrolls a little. */
+    .day-cell { aspect-ratio: auto; min-height: 40px; height: clamp(40px, calc((100dvh - 360px) / 5), 72px); }
   }
   .day-memo {
     font-size: 9px;
@@ -246,6 +249,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: left;
+    flex-shrink: 0; /* never squeezed to a half-height strip */
   }
   .day-cell.dim { opacity: 0.4; }
   .day-cell.unset {
